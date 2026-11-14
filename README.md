@@ -124,6 +124,14 @@ Data is kept per user: accounts in the database (SQLite on your own computer, Po
 clips in each user's own folder. [AGENTS.md](AGENTS.md) is a short map of the code for contributors and AI coding
 assistants.
 
+## Updating
+
+PeakCut checks GitHub every few hours. When a newer version is out, the dashboard shows a notice with what changed
+and how to update: ask your AI coding assistant to do it (the notice has a sentence to paste), or run
+`git pull && pip install -r requirements.txt` in the PeakCut folder and restart it (with Docker:
+`git pull && docker compose up -d --build`). Your `.env`, keys and clips are not touched. Only the two commit ids
+are sent to GitHub; set `PEAKCUT_UPDATE_CHECK=0` to turn the check off.
+
 ## Deploy
 
 [DEPLOY.md](DEPLOY.md) walks through a single server with Docker: the app, PostgreSQL, and Caddy for HTTPS.

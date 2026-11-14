@@ -53,7 +53,8 @@ def main() -> int:
                 ("AI services", ["tests/test_ai.py"]),
                 ("no sign-in, and the AI key from the dashboard", ["tests/test_local.py"]),
                 ("Hindi and Urdu captions in Roman letters", ["tests/test_roman.py"]),
-                ("connecting YouTube, Instagram and TikTok", ["tests/test_connect.py"])]
+                ("connecting YouTube, Instagram and TikTok", ["tests/test_connect.py"]),
+                ("the new-version notice", ["tests/test_updates.py"])]
         for name, args in runs:
             print(f"\n=== {name} ===", flush=True)
             r = subprocess.run([sys.executable, *args], cwd=ROOT, env=env, capture_output=True, text=True, encoding="utf-8", errors="replace")
