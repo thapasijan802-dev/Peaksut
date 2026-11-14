@@ -11,7 +11,7 @@ import traceback
 import uuid
 from pathlib import Path
 
-from . import brain, config, creators, ctx, load, media, render, safe, transcribe, usage
+from . import brain, config, creators, ctx, load, media, render, roman, safe, transcribe, usage
 
 class _FairQueue:
     """Whose video is next. Each person has their own line and the lines take turns, so someone who adds ten
@@ -372,7 +372,8 @@ def render_one(job, clip, words):
             clip["end"] = min(clip["end"], job["duration"])
         local = dict(clip, start=clip["start"] - off, end=clip["end"] - off)
         span = [round(clip["start"], 2), round(clip["end"], 2)]
-        if clip.get("fixed_for") == span and clip.get("fixed_words"):
+        if clip.get("fixed_for") == span and clip.get("fixed_words") and not any(
+                roman.needs_roman(w.get("w", "")) for w in clip["fixed_words"]):
             raw = clip["fixed_words"]          # already tidied for this exact span: no second AI call
         else:
             raw = [w for w in words if clip["start"] - 1 <= w["s"] <= clip["end"] + 1]
