@@ -15,7 +15,8 @@ creator's live stream and clip the highlights while the stream is still running.
   and the transcript.
 - **Workspaces per creator.** Channels, clip settings, posting rules and an activity log for each creator you clip.
 - **Posting.** Queue or auto-post finished clips to YouTube Shorts and Instagram Reels, with spacing and daily caps.
-- **Accounts.** Email or Google sign-in, so several people can share one server, and an admin dashboard.
+- **No sign-in on your own computer.** It opens straight into the dashboard. On a shared server, switch accounts on
+  (`PEAKCUT_ACCOUNTS=1`) for email or Google sign-in and an admin dashboard.
 - **Your own AI.** Gemini, OpenAI, Grok, Groq, OpenRouter, Claude, a local model through Ollama, or anything that
   speaks the OpenAI chat format. No key at all also works: clips are then picked by loudness.
 
@@ -35,12 +36,7 @@ cd peakcut
 pip install -r requirements.txt
 ```
 
-```bash
-cp .env.example .env
-```
-
-Open `.env` and fill in the three AI lines (see [Choose your AI](#choose-your-ai)). Then download the speech model
-once (about 480 MB) and start the server:
+Download the speech model once (about 480 MB) and start the server:
 
 ```bash
 python -m studio.fetch_model
@@ -50,12 +46,16 @@ python -m studio.fetch_model
 python -m studio.server
 ```
 
-Open http://127.0.0.1:8765 and sign up. The first account is a normal user like any other; to open the admin
-dashboard, see [Admins](#admins).
+Open http://127.0.0.1:8765. There is no sign-in: it opens straight into the dashboard. Go to **Settings, AI**, choose
+your AI service, paste your key and press **Save and test** (see [Choose your AI](#choose-your-ai)).
 
 ## Choose your AI
 
-PeakCut needs a chat model that can return JSON. Set three lines in `.env`:
+PeakCut needs a chat model that can return JSON. The easy way is in the dashboard: **Settings, AI**. Pick the
+service, paste your key, press **Find models** to choose from the service's own list, then **Save and test**. The
+key is kept in the data folder on your machine and is never shown again.
+
+If you prefer a file (or run a server), the same three things can go in `.env`. What is saved in the dashboard wins:
 
 ```ini
 PEAKCUT_AI_PROVIDER=gemini
@@ -88,7 +88,8 @@ Everything is set through environment variables, normally in a `.env` file next 
 
 | Setting | What it is for |
 |---|---|
-| `PEAKCUT_AI_PROVIDER`, `PEAKCUT_AI_MODELS`, `PEAKCUT_AI_KEY` | The AI that picks clips and writes titles |
+| `PEAKCUT_AI_PROVIDER`, `PEAKCUT_AI_MODELS`, `PEAKCUT_AI_KEY` | The AI that picks clips and writes titles (or set it in the dashboard) |
+| `PEAKCUT_ACCOUNTS` | `1` makes everyone sign in. Use it on any server other people can reach |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Optional: Sign in with Google, and connecting YouTube |
 | `PEAKCUT_SMTP_*`, `PEAKCUT_MAIL_FROM` | Optional: confirmation and password emails |
 | `PEAKCUT_DATA` | Where videos, clips and the database are kept (default `./data`) |
@@ -97,7 +98,8 @@ Everything is set through environment variables, normally in a `.env` file next 
 
 ## Admins
 
-An account is an admin only when the database says so. No email address is special in the code and no web request
+This only matters with accounts switched on (`PEAKCUT_ACCOUNTS=1`); without them you are the owner and can do
+everything. An account is an admin only when the database says so. No email address is special in the code and no web request
 can change a role. Do it on the machine that runs PeakCut:
 
 ```bash
@@ -149,6 +151,8 @@ queue tests against it, then removes it. It needs no keys and never touches real
 
 ## Security
 
+- With sign-in off, PeakCut listens on this computer only (`127.0.0.1`), refuses changes sent by other websites,
+  and only answers to its own address. Do not expose it to the internet that way: turn accounts on.
 - Passwords are stored only as salted scrypt hashes. Sessions are random tokens stored hashed; cookies are HTTP-only.
 - Every route works out who is asking from the session, never from the request, so users only reach their own data.
 - Only known video sites are fetched, and text from videos is treated as data when it is shown to the AI.

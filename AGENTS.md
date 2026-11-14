@@ -17,7 +17,7 @@ A short map for contributors and AI coding assistants.
 |---|---|
 | `studio/server.py` | Every web route, and the gate that runs before each request (who is asking, limits, headers) |
 | `studio/config.py` | Every setting, read from environment variables |
-| `studio/ai.py` | The only code that talks to an AI service. One function per kind of service |
+| `studio/ai.py` | The only code that talks to an AI service, and the AI settings saved from the dashboard (`ai.json` in the data folder) |
 | `studio/brain.py` | The prompts: finding clips, live judging, hooks and titles, caption fixes |
 | `studio/usage.py` | The record of AI calls and tokens shown on the AI usage page |
 | `studio/jobs.py` | The video pipeline and the fair queue |
@@ -31,6 +31,8 @@ A short map for contributors and AI coding assistants.
 
 ## Rules worth knowing
 
+- **Sign-in is off by default** (`config.ACCOUNTS`): every request then belongs to one built-in owner
+  (`auth.local_user()`). With `PEAKCUT_ACCOUNTS=1` it is a normal multi-user site. Both paths are tested.
 - **Who is asking** always comes from the session (`ctx.uid()`), never from the request body. Background threads
   set it themselves with `ctx.as_user(...)`.
 - **Anything that changes what a user sees must call `ctx.bump()`**. The page polls `/api/sync`, which answers
@@ -38,6 +40,8 @@ A short map for contributors and AI coding assistants.
 - **Text from videos is untrusted**: it goes into prompts through `brain._safe` and out through `brain._text`.
 - **Adding an AI provider**: add a row to `PROVIDERS` in `studio/ai.py`. If it speaks the OpenAI chat format that
   is all; otherwise add one function that returns `(parsed JSON, tokens in, tokens out)`.
+- **Clips are rendered in a short temporary folder** and moved into place (`render.render_clip`): ffmpeg's caption
+  step cannot open paths longer than 260 characters on Windows.
 - **Secrets** are read from the environment or from files named by `*_FILE` settings. Never write a key, a real
   address or a personal path into a tracked file.
 - **Pages** are plain HTML, CSS and JavaScript. Keep the existing palette, no shadows, and hover states that

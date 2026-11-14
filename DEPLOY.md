@@ -17,10 +17,12 @@ PeakCut runs as three containers on one Linux server: the app, PostgreSQL, and C
    `COMPOSE_PROFILES=own-https` if the server is PeakCut's alone. Put key files, if you use files, in `./secrets/`.
 3. `docker compose up -d --build`
    The first start downloads the speech model (about 480 MB) and creates the database tables.
-4. Open `https://your-domain` and sign up. Every new account is a normal user.
+4. Open `https://your-domain` and sign up. With Docker, accounts are on (`PEAKCUT_ACCOUNTS=1`), so everyone signs in.
+   Every new account is a normal user.
 5. Make yourself an admin, on the server: `docker compose exec app python -m studio.admin grant you@example.com`
    The admin dashboard is then at `https://your-domain/admin`. It answers "not found" for everyone who is not an
    admin, and no page or web request can make someone an admin: only that command can.
+6. Sign in as that admin, open **Settings, AI**, and add your AI key there (or put it in `.env`).
 
 ## Google setup (sign-in and YouTube)
 

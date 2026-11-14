@@ -21,7 +21,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 
 from . import admin as admins
 from . import account, load
-from . import (accounts, alerts, auth, config, creators, ctx, db, jobs, live, media, posting,
+from . import (accounts, ai, alerts, auth, config, creators, ctx, db, jobs, live, media, posting,
                profiles, render, safe, transcribe, usage)
 
 app = FastAPI(title="PeakCut", docs_url=None, redoc_url=None, openapi_url=None)
@@ -105,10 +105,22 @@ class Gate:
 
         is_open = path in PAGES or any(path.startswith(p) for p in OPEN)
         admin_area = path == "/admin" or path.startswith(("/admin/", "/api/admin/"))
-        cookie = req.cookies.get(auth.COOKIE, "")
-        user = auth._sess.get(auth._h(cookie)) if cookie and not admin_area else None      # remembered: no database, no thread hop
-        user = user[1] if user and time.time() - user[0] < auth.SESS_FOR else (
-            await run_in_threadpool(auth.user_for, cookie, admin_area) if cookie else None)
+        if config.ACCOUNTS:
+            cookie = req.cookies.get(auth.COOKIE, "")
+            user = auth._sess.get(auth._h(cookie)) if cookie and not admin_area else None      # remembered: no database, no thread hop
+            user = user[1] if user and time.time() - user[0] < auth.SESS_FOR else (
+                await run_in_threadpool(auth.user_for, cookie, admin_area) if cookie else None)
+        else:
+            # No sign-in: whoever opens the page is the owner. Because nothing else stands in the way, the page
+            # must have been asked for by its real address (a number, "localhost", or the address in settings),
+            # so another website cannot reach it through a made-up name that points at this machine.
+            if not _own_address(req.headers.get("host", "")):
+                return await deny(403, "Open PeakCut by its own address.")
+            if path == "/" or path == "/reset" or path.startswith("/auth/"):
+                return await deny(303, "", redirect="/app")
+            if path.startswith("/api/auth/") and path != "/api/auth/me":
+                return await deny(404, "Not Found")
+            user = auth._local or await run_in_threadpool(auth.local_user)
         if admin_area:
             # The admin area does not exist for anyone else: same "not found" whether signed out or a normal user.
             if not user or not user.is_admin:
@@ -232,6 +244,21 @@ def _ip(request: Request) -> str:
     if named and request.headers.get(named) and _from_cdn(peer):
         return request.headers[named].split(",")[0].strip()[:64]
     return peer
+
+
+def _own_address(host: str) -> bool:
+    """Is this the address PeakCut is really reached by? A number (127.0.0.1, 192.168.1.20), "localhost", or the
+    host in PEAKCUT_PUBLIC_URL."""
+    import ipaddress
+    name = host.strip().lower()
+    name = name[1:name.index("]")] if name.startswith("[") and "]" in name else name.rsplit(":", 1)[0] if ":" in name else name
+    if name in ("localhost", urlparse(config.PUBLIC_URL).hostname or "") or name.endswith(".localhost"):
+        return True
+    try:
+        ipaddress.ip_address(name)
+        return True
+    except ValueError:
+        return False
 
 
 def _me(request: Request):
@@ -512,7 +539,7 @@ def google_callback(request: Request, code: str = "", state: str = "", error: st
 @app.get("/api/status")
 def status(request: Request):
     from . import notices
-    return {"user": auth.public(_me(request)), "ai": usage.brief(), "unread": notices.unread(),
+    return {"user": auth.public(_me(request)), "accounts": config.ACCOUNTS, "ai": usage.brief(), "unread": notices.unread(),
             "tour": not accounts.settings()["tour_done"],
             "youtube": accounts.youtube_ready(), "max_upload_mb": config.MAX_UPLOAD_MB, "upload_part_mb": config.UPLOAD_PART_MB, "max_batch": config.MAX_ACTIVE_JOBS_PER_USER,
             "styles": {k: v["label"] for k, v in render.STYLES.items()}, "layouts": render.LAYOUTS}
@@ -1183,6 +1210,56 @@ def ai_usage():
     return usage.summary({c["id"]: c["name"] for c in creators.all_creators()})
 
 
+# ---------------------------------------------------------------- the AI key and model, set from the dashboard
+# Only the owner (or an admin, when accounts are on) reaches these. The key is never sent back to the page.
+def _ai_error(e) -> str:
+    return safe.friendly(e, 300).replace(ai.key() or "\0", "<key>")
+
+
+@app.get("/api/ai")
+def ai_get(request: Request):
+    _admin(request)
+    return ai.public()
+
+
+@app.put("/api/ai")
+def ai_put(request: Request, body: dict = Body(...)):
+    _admin(request)
+    k = body.get("key")
+    try:
+        out = ai.save(body.get("provider"), body.get("models"), body.get("base_url") or "",
+                      None if k is None or (isinstance(k, str) and not k.strip() and not body.get("remove_key")) else str(k))
+    except (ValueError, TypeError) as e:
+        raise HTTPException(400, str(e))
+    usage.forget_all()
+    ctx.bump()
+    return out
+
+
+@app.post("/api/ai/models")
+def ai_models(request: Request, body: dict = Body(default={})):
+    _admin(request)
+    _throttle("aimodels:" + ctx.uid(), 30, 600)
+    try:
+        return {"models": ai.list_models(body.get("provider"), body.get("base_url"), body.get("key"))}
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, "The service did not give its list of models. Check the key, or type the model yourself. " + _ai_error(e)[:160])
+
+
+@app.post("/api/ai/test")
+def ai_test(request: Request):
+    _admin(request)
+    _throttle("aitest:" + ctx.uid(), 20, 600)
+    try:
+        return ai.test()
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, "The AI did not answer: " + _ai_error(e))
+
+
 # ================================================================ posting, accounts, settings
 @app.get("/api/overview")
 def overview():
@@ -1346,6 +1423,9 @@ def admin_delete_user(request: Request, uid: str, body: dict = Body(...)):
 
 def main():
     print(f"\n  PeakCut is running:  {config.PUBLIC_URL}\n")
+    if not config.ACCOUNTS and (config.HTTPS or config.HOST not in ("127.0.0.1", "localhost", "::1")):
+        print("  Sign-in is off, so anyone who can reach this address can use PeakCut and its AI key.\n"
+              "  On a server other people can reach, set PEAKCUT_ACCOUNTS=1 in .env.\n", flush=True)
     if config.env("PEAKCUT_AUTO_RELOAD") == "1":
         # restart by itself whenever the server code changes (pages in web/ never need a restart)
         uvicorn.run("studio.server:app", host=config.HOST, port=config.PORT, log_level="warning", backlog=4096, reload=True,

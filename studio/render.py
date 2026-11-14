@@ -1,8 +1,8 @@
 """Turns a time range into a vertical clip: 9:16 layout, bouncy word captions, hook title, cover."""
-import os
 import re
 import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 
 from . import config
@@ -233,16 +233,29 @@ _qsv_ok = None
 
 def render_clip(src: Path, out_dir: Path, name: str, clip: dict, words: list, src_w: int, src_h: int) -> dict:
     """Writes <name>.mp4, <name>.jpg and <name>.ass into out_dir. Returns file names."""
-    global _qsv_ok
     out_dir.mkdir(parents=True, exist_ok=True)
     start, end = clip["start"], clip["end"]
     layout, fg_h, hook_y, cap_y = geometry(src_w, src_h, clip.get("layout", "blur"))
     ass = build_ass(words, start, end, clip.get("hook", ""), clip.get("style", "bounce"),
                     clip.get("highlight_words", []), hook_y, cap_y)
-    (out_dir / f"{name}.ass").write_text(ass, encoding="utf-8")
-    fonts = os.path.relpath(config.FONTS_DIR, out_dir).replace("\\", "/")
-    # relative paths only: ffmpeg runs inside out_dir, and a drive colon would break the filter syntax
-    fc = _filter(layout, fg_h) + f"[v0]ass={name}.ass:fontsdir={fonts}[v]"
+    # The clip is made in a short work folder and moved into place afterwards. The caption step of ffmpeg cannot
+    # open files whose full path is longer than 260 characters on Windows, which a data folder deep inside other
+    # folders easily reaches. Inside the work folder every name is short and relative (a drive colon would also
+    # break the filter syntax).
+    work = Path(tempfile.mkdtemp(prefix="pk"))
+    try:
+        return _render_in(work, src, out_dir, name, start, end, layout, fg_h, ass)
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
+def _render_in(work: Path, src: Path, out_dir: Path, name: str, start, end, layout, fg_h, ass: str) -> dict:
+    global _qsv_ok
+    (work / f"{name}.ass").write_text(ass, encoding="utf-8")
+    (work / "f").mkdir()
+    for f in config.FONTS_DIR.glob("*.ttf"):
+        shutil.copyfile(f, work / "f" / f.name)
+    fc = _filter(layout, fg_h) + f"[v0]ass={name}.ass:fontsdir=f[v]"
     base = ["ffmpeg", "-y", "-v", "error", "-ss", f"{start:.2f}", "-t", f"{end - start:.2f}", "-i", str(src),
             "-filter_complex", fc, "-map", "[v]", "-map", "0:a:0", "-af", "loudnorm=I=-14:TP=-1.5:LRA=11",
             "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-movflags", "+faststart", "-pix_fmt"]
@@ -252,7 +265,7 @@ def render_clip(src: Path, out_dir: Path, name: str, clip: dict, words: list, sr
     encoders.append(("x264", ["yuv420p", "-c:v", "libx264", "-crf", "21", "-preset", "veryfast"]))
     err = None
     for label, enc in encoders:
-        p = subprocess.run(base + enc + [f"{name}.mp4"], cwd=out_dir, capture_output=True, text=True,
+        p = subprocess.run(base + enc + [f"{name}.mp4"], cwd=work, capture_output=True, text=True,
                            encoding="utf-8", errors="replace", creationflags=NO_WINDOW, timeout=1800)
         if p.returncode == 0:
             if label == "qsv":
@@ -265,5 +278,7 @@ def render_clip(src: Path, out_dir: Path, name: str, clip: dict, words: list, sr
         raise RuntimeError(f"Render failed: {err}")
     cover_t = min(1.2, (end - start) / 2)
     run(["ffmpeg", "-y", "-v", "error", "-ss", f"{cover_t:.2f}", "-i", f"{name}.mp4", "-frames:v", "1",
-         "-q:v", "3", f"{name}.jpg"], cwd=out_dir)
+         "-q:v", "3", f"{name}.jpg"], cwd=work)
+    for ext in ("mp4", "jpg", "ass"):
+        shutil.move(str(work / f"{name}.{ext}"), str(out_dir / f"{name}.{ext}"))
     return {"file": f"{name}.mp4", "cover": f"{name}.jpg", "layout": layout}

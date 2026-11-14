@@ -235,6 +235,29 @@ def change_password(uid: str, current: str, new: str, keep_token: str = ""):
     forget(uid)
 
 
+# ---------------------------------------------------------------- no sign-in: one built-in owner
+LOCAL_ID = "u_local"
+_local = None
+
+
+def local_user():
+    """With accounts switched off there is nothing to sign in to: everything belongs to one owner, who may do
+    everything. If accounts were used here before, the oldest one becomes the owner, so nothing they made is lost."""
+    global _local
+    if _local is None:
+        with db.engine.begin() as c:
+            u = c.execute(sa.select(db.users).order_by(db.users.c.created_at).limit(1)).first()
+            if not u:
+                c.execute(db.users.insert().values(id=LOCAL_ID, email="you@localhost", name="You", is_admin=True, created_at=time.time()))
+            elif not u.is_admin or u.disabled:
+                c.execute(db.users.update().where(db.users.c.id == u.id).values(is_admin=True, disabled=False))
+            uid = u.id if u else LOCAL_ID
+        config.user_dir(uid).mkdir(parents=True, exist_ok=True)
+        mark_verified(uid)
+        _local = get_user(uid)
+    return _local
+
+
 # ---------------------------------------------------------------- sessions
 def _h(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()

@@ -90,7 +90,7 @@ check("an unknown provider is not ready", not ai.ready())
 use("ollama")
 os.environ["PEAKCUT_AI_KEY"] = ""
 config._kept.clear()
-check("ollama needs no key", ai.ready() and ai.label() == "Ollama")
+check("ollama needs no key", ai.ready() and ai.label().startswith("Ollama"))
 out, _s, _w = ai.call("model-a", "hello", brain.SCHEMA)
 check("ollama: no key header is sent", "Authorization" not in seen[0][2] and out == [CLIP])
 use("gemini")

@@ -166,7 +166,7 @@ def ask_ai(prompt, schema=None, purpose="AI call"):
     if not config.ai_ready():
         raise RuntimeError("The AI is not set up on this server.")
     last = None
-    for model in config.AI_MODELS:
+    for model in ai.models():
         for attempt in range(3):
             try:
                 out, sent, wrote = ai.call(model, prompt, schema or SCHEMA)

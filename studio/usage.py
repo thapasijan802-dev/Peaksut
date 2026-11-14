@@ -36,6 +36,11 @@ def forget(uid: str):
     _brief.pop(uid, None)
 
 
+def forget_all():
+    """The AI settings changed: every page should say so on its next look."""
+    _brief.clear()
+
+
 def _day(t):
     return time.strftime("%Y-%m-%d", time.localtime(t))
 
@@ -55,7 +60,7 @@ def brief() -> dict:
     with db.engine.connect() as c:
         today = c.execute(sa.select(sa.func.count(), sa.func.coalesce(sa.func.sum(_tokens()), 0)).where(
             u.user_id == uid, u.t >= midnight)).first()
-    out = {"ready": ai.ready(), "provider": ai.label(), "model": config.AI_MODELS[0] if config.AI_MODELS else "",
+    out = {"ready": ai.ready(), "provider": ai.label(), "model": (ai.models() or [""])[0],
            "today_calls": int(today[0]), "today_tokens": int(today[1])}
     _brief[uid] = (now, out)
     return dict(out)
