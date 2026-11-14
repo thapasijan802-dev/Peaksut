@@ -370,7 +370,7 @@ def render_one(job, clip, words):
         src = Path(clip["src"]) if clip.get("src") else Path(job["source_path"])
         if not clip.get("src"):
             clip["end"] = min(clip["end"], job["duration"])
-        local = dict(clip, start=clip["start"] - off, end=clip["end"] - off)
+        local = dict(clip, start=clip["start"] - off, end=clip["end"] - off, hook=roman.to_roman(clip.get("hook") or ""))
         span = [round(clip["start"], 2), round(clip["end"], 2)]
         if clip.get("fixed_for") == span and clip.get("fixed_words") and not any(
                 roman.needs_roman(w.get("w", "")) for w in clip["fixed_words"]):
@@ -383,7 +383,8 @@ def render_one(job, clip, words):
                 clip.update(fixed_words=raw, fixed_for=span)
             except Exception:  # noqa: BLE001 - captions still render with the words as heard
                 pass
-        near = [dict(w, s=w["s"] - off, e=w["e"] - off) for w in raw]
+        # the last word on it: whatever was said, nothing is drawn in Hindi or Urdu script
+        near = [dict(w, s=w["s"] - off, e=w["e"] - off) for w in roman.words(raw)]
         out = render.render_clip(src, d / "clips", clip["id"], local, near, job["width"], job["height"])
         clip.update(out, status="done", version=clip.get("version", 0) + 1, error=None)
         post = {k: clip[k] for k in ("title", "description", "hashtags", "hook", "start", "end", "score")}

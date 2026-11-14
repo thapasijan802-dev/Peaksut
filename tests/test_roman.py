@@ -28,6 +28,9 @@ out = brain.fix_caption_words(src, "test")
 check("without AI, Hindi captions come out in Roman letters", text(out) == "are chuna jo usko laga", text(out))
 check("...with every word at its own time", [(w["s"], w["e"]) for w in out] == [(w["s"], w["e"]) for w in src])
 check("short clips are spelled out too", text(brain.fix_caption_words(ws("जो उसको"), "")) == "jo usko")
+out = text(brain.fix_caption_words(ws("یار یہ کیا ہے بھائی"), ""))
+check("without AI, Urdu captions come out in Roman letters too", out == "yaar ye kya hai bhai", out)
+check("Urdu punctuation and digits become plain ones", roman.to_roman("ہاں، ۱۰۰۰ روپے؟") == "haan, 1000 rupay?", roman.to_roman("ہاں، ۱۰۰۰ روپے؟"))
 
 # ---- with the AI: its Hinglish is used, a translation is not, Urdu and other languages are handled
 answers = {}
