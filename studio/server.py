@@ -539,7 +539,7 @@ def google_callback(request: Request, code: str = "", state: str = "", error: st
 @app.get("/api/status")
 def status(request: Request):
     from . import notices
-    return {"user": auth.public(_me(request)), "accounts": config.ACCOUNTS, "ai": usage.brief(), "unread": notices.unread(),
+    return {"user": auth.public(_me(request)), "accounts": config.ACCOUNTS, "links": {"repo": config.REPO_URL, "follow": config.FOLLOW_URL}, "ai": usage.brief(), "unread": notices.unread(),
             "tour": not accounts.settings()["tour_done"],
             "youtube": accounts.youtube_ready(), "max_upload_mb": config.MAX_UPLOAD_MB, "upload_part_mb": config.UPLOAD_PART_MB, "max_batch": config.MAX_ACTIVE_JOBS_PER_USER,
             "styles": {k: v["label"] for k, v in render.STYLES.items()}, "layouts": render.LAYOUTS}

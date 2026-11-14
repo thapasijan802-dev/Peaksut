@@ -150,6 +150,8 @@ main{background:var(--bg);margin:8px 8px 8px 0;border-radius:var(--r-lg);height:
 .ttabs .tabbtn.on{background:var(--brand-soft);color:var(--brand-ink)}
 .ttabs .tabbtn.on .n{background:#fff}
 #actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end}
+#actions a.btn{text-decoration:none}
+@media (max-width:560px){#actions .btn .long{display:none}}
 @media (max-width:900px){.ttabs .tabbtn .lbl{display:none}.ttabs .tabbtn{padding:0 10px}}
 /* channels in Setup */
 .chans{display:flex;flex-direction:column;gap:8px}
@@ -581,31 +583,6 @@ dialog::backdrop{background:rgba(14,12,11,.42);animation:fadein .16s ease}
 .toast.ok::before{background:#3DDC97}.toast.bad::before{background:#FF6B78}
 .toast .rep{margin-left:auto;border:0;background:rgba(255,255,255,.1);color:#fff;font:inherit;font-size:12px;font-weight:600;padding:3px 9px;border-radius:6px;cursor:pointer;white-space:nowrap}
 .toast .rep:hover{background:rgba(255,255,255,.18)}
-.fb-dlg{width:460px;max-width:calc(100vw - 32px);padding:0;border:0;border-radius:16px}
-.fb-dlg[open]{animation:fbin .22s ease}
-.fb-dlg::backdrop{background:rgba(14,12,11,.42);animation:fadein .16s ease}
-@keyframes fbin{from{opacity:0;transform:translateY(8px) scale(.98)}to{opacity:1;transform:none}}
-.fb-in{padding:22px}
-.fb-head{display:flex;align-items:flex-start;gap:12px;margin-bottom:16px}
-.fb-head h3{font-size:18px;color:var(--brand-ink);margin-bottom:3px}
-.fb-head p{font-size:13px;color:var(--dim)}
-.fb-head .x{margin-left:auto;flex:none;width:30px;height:30px;border:0;border-radius:8px;background:transparent;color:var(--faint);display:grid;place-items:center;cursor:pointer}
-.fb-head .x:hover{background:var(--muted);color:var(--text)}
-.fb-head .x svg{width:16px;height:16px}
-.fb-kinds{display:flex;gap:2px;padding:3px;background:var(--muted);border-radius:10px;margin-bottom:12px}
-.fb-kinds button{flex:1;height:34px;border:0;border-radius:8px;background:transparent;color:var(--dim);font:inherit;font-size:13px;font-weight:600;cursor:pointer;transition:background-color .15s ease,color .15s ease}
-.fb-kinds button svg{display:none}
-.fb-kinds button:hover{color:var(--text)}
-.fb-kinds button[aria-pressed=true]{background:#fff;color:var(--brand-ink)}
-.fb-dlg textarea{width:100%;min-height:130px;margin-bottom:10px;resize:vertical}
-.fb-ctx{font-size:12px;color:var(--faint);background:var(--muted);border-radius:8px;padding:8px 10px;margin-bottom:10px;overflow-wrap:anywhere}
-.fb-foot{display:flex;align-items:center;gap:8px}
-.fb-foot small{flex:1;font-size:11px;color:var(--faint)}
-.fb-done{text-align:center;padding:22px 8px}
-.fb-done i{display:grid;place-items:center;width:46px;height:46px;margin:0 auto 10px;border-radius:50%;background:#E9F6EE;color:#1F7A4D}
-.fb-done i svg{width:22px;height:22px}
-.fb-done b{display:block;font-size:15px;color:var(--brand-ink);margin-bottom:4px}
-.fb-done span{font-size:13px;color:var(--dim)}
 .err .rep{margin-left:8px;border:0;background:transparent;color:inherit;font:inherit;font-weight:600;text-decoration:underline;cursor:pointer;padding:0}
 
 .ntoast{display:flex;gap:12px;align-items:flex-start;width:340px;max-width:calc(100vw - 40px);padding:12px 12px 12px 12px;border-radius:12px;background:#fff;border:1px solid var(--line);color:var(--text);cursor:pointer;text-align:left;
@@ -831,7 +808,6 @@ dialog[open]{animation:fadein .16s ease}
 <dialog id="formdlg"></dialog>
 <input type="file" id="file" accept="video/*" multiple hidden>
 <div id="toasts" role="status" aria-live="polite"></div>
-<dialog class="fb-dlg" id="fbpop" aria-label="Send feedback"></dialog>
 <div class="pop" id="bellpop" role="dialog" aria-label="Notifications" hidden></div>
 <div class="pop menu" id="acctpop" role="menu" hidden></div>
 
@@ -842,6 +818,8 @@ const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const I = {
+ "github": "<path fill-rule=\"evenodd\" transform=\"scale(16)\" d=\"M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z\"/>",
+ "instagram": "<rect x=\"32\" y=\"32\" width=\"192\" height=\"192\" rx=\"56\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"18\"/><circle cx=\"128\" cy=\"128\" r=\"42\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"18\"/><circle cx=\"184\" cy=\"72\" r=\"13\"/>",
  "chat": "<path d=\"M128,24A104,104,0,0,0,36.18,176.88L24.83,210.93a16,16,0,0,0,20.24,20.24l34.05-11.35A104,104,0,1,0,128,24Zm0,192a87.87,87.87,0,0,1-44.06-11.81,8,8,0,0,0-6.54-.67L40,216,52.47,178.6a8,8,0,0,0-.66-6.54A88,88,0,1,1,128,216Zm12-88a12,12,0,1,1-12-12A12,12,0,0,1,140,128Zm-44,0a12,12,0,1,1-12-12A12,12,0,0,1,96,128Zm88,0a12,12,0,1,1-12-12A12,12,0,0,1,184,128Z\"/>",
  "bug": "<path d=\"M144,92a12,12,0,1,1,12,12A12,12,0,0,1,144,92ZM100,80a12,12,0,1,0,12,12A12,12,0,0,0,100,80Zm116,64A87.76,87.76,0,0,1,213,167l22.24,9.72A8,8,0,0,1,232,192a7.89,7.89,0,0,1-3.2-.67L207.38,182a88,88,0,0,1-158.76,0L27.2,191.33A7.89,7.89,0,0,1,24,192a8,8,0,0,1-3.2-15.33L43,167A87.76,87.76,0,0,1,40,144v-8H16a8,8,0,0,1,0-16H40v-8a87.76,87.76,0,0,1,3-23L20.8,79.33a8,8,0,1,1,6.4-14.66L48.62,74a88,88,0,0,1,158.76,0l21.42-9.36a8,8,0,0,1,6.4,14.66L213,89.05a87.76,87.76,0,0,1,3,23v8h24a8,8,0,0,1,0,16H216ZM56,120H200v-8a72,72,0,0,0-144,0Zm64,95.54V136H56v8A72.08,72.08,0,0,0,120,215.54ZM200,144v-8H136v79.54A72.08,72.08,0,0,0,200,144Z\"/>",
  "bulb": "<path d=\"M176,232a8,8,0,0,1-8,8H88a8,8,0,0,1,0-16h80A8,8,0,0,1,176,232Zm40-128a87.55,87.55,0,0,1-33.64,69.21A16.24,16.24,0,0,0,176,186v6a16,16,0,0,1-16,16H96a16,16,0,0,1-16-16v-6a16,16,0,0,0-6.23-12.66A87.59,87.59,0,0,1,40,104.49C39.74,56.83,78.26,17.14,125.88,16A88,88,0,0,1,216,104Zm-16,0a72,72,0,0,0-73.74-72c-39,.92-70.47,33.39-70.26,72.39a71.65,71.65,0,0,0,27.64,56.3A32,32,0,0,1,96,186v6h64v-6a32.15,32.15,0,0,1,12.47-25.35A71.65,71.65,0,0,0,200,104Z\"/>",
@@ -1162,7 +1140,7 @@ function openAcct() {
   const u = S.status.user;
   const on = S.status.accounts !== false;
   p.innerHTML = `${on ? `<div class="who2"><b>${esc(u.name)}</b><span>${esc(u.email)}</span></div>` : ""}
-    <button data-act="go" data-v="settings">${ic("cog")}Settings</button><button data-act="go" data-v="usage">${ic("chart")}AI usage</button><button data-act="tour">${ic("play")}Take the tour</button>
+    <button data-act="go" data-v="settings">${ic("cog")}Settings</button><button data-act="go" data-v="usage">${ic("chart")}AI usage</button><button data-act="tour">${ic("play")}Take the tour</button>${S.status.links?.follow ? `<button data-act="feedback">${ic("chat")}Send feedback</button>` : ""}
     ${on ? `<button class="danger" data-act="logout">${ic("signout")}Sign out</button>` : ""}`;
   openPop(p, $("[data-act=acctmenu]"));
 }
@@ -1207,35 +1185,13 @@ async function checkNew(first) {
     lastNotice = Math.max(lastNotice, top); localStorage.setItem("lastNotice", lastNotice);
   } catch {}
 }
-/* feedback: bugs, ideas, anything else; read by admins */
-const FB = {bug: ["Report a bug", "bug", "What went wrong? What did you expect instead?"],
-            idea: ["Suggest a feature", "bulb", "What would make PeakCut better for you?"],
-            other: ["Something else", "chat", "Tell us anything."]};
-function openFeedback(kind = "bug", context = "") {
-  const p = $("#fbpop");
-  p.dataset.kind = kind; p.dataset.ctx = context;
-  p.innerHTML = `<div class="fb-in"><div class="fb-head"><div><h3>Send feedback</h3><p>Found a problem or have an idea? It goes straight to the PeakCut team.</p></div>
-      <button class="x" data-act="fbclose" aria-label="Close">${ic("x")}</button></div>
-    <div class="fb-kinds" role="group" aria-label="What is it about">${Object.entries(FB).map(([k, [l, i]]) =>
-      `<button type="button" data-act="fbkind" data-k="${k}" aria-pressed="${k === kind}">${ic(i)}${l}</button>`).join("")}</div>
-    <textarea id="fbmsg" maxlength="4000" placeholder="${FB[kind][2]}" aria-label="Your message"></textarea>
-    ${context ? `<div class="fb-ctx">Included: ${esc(context.slice(0, 300))}</div>` : ""}
-    <div class="fb-foot"><small>We also send the page you're on, so we can find it.</small><button class="btn primary" data-act="fbsend">Send</button></div></div>`;
-  if (!p.open) p.showModal();
-  setTimeout(() => $("#fbmsg")?.focus(), 50);
+/* feedback goes to the maker's Instagram. A problem's message is copied first, so it can be pasted there. */
+async function openFeedback(kind = "bug", context = "") {
+  const url = S.status?.links?.follow;
+  if (!url) return toast(context ? "Copy this message and open an issue on GitHub." : "There's no feedback link on this server.");
+  if (context) { try { await navigator.clipboard.writeText(context); toast("The problem is copied. Paste it in your message.", "ok"); } catch {} }
+  window.open(url, "_blank", "noopener");
 }
-function closeFeedback() { const p = $("#fbpop"); if (p.open) p.close(); }
-async function sendFeedback(b) {
-  const p = $("#fbpop"), msg = $("#fbmsg").value.trim();
-  if (msg.length < 3) { $("#fbmsg").focus(); return toast("Write a few words so we know what you mean."); }
-  b.disabled = true;
-  try {
-    await send("/api/feedback", {kind: p.dataset.kind, message: msg, page: location.pathname, context: p.dataset.ctx || ""});
-    p.innerHTML = `<div class="fb-in"><div class="fb-done"><i>${ic("check")}</i><b>Thanks, it's on its way</b><span>We read every message.</span></div></div>`;
-    setTimeout(closeFeedback, 2200);
-  } catch (e) { b.disabled = false; toast(e.message, "bad"); }
-}
-$("#fbpop").addEventListener("click", e => { if (e.target === e.currentTarget) closeFeedback(); });   // click on the dim backdrop
 function greeting() { const h = new Date().getHours(); return h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening"; }
 let lastInd = null;
 addEventListener("resize", () => { lastInd = null; const i = $("#utabs .ind"); if (i) i.remove(); moveInd(); });   // where the orange pill was, so it can slide from there to the new tab
@@ -1286,7 +1242,11 @@ function drawShell() {  const nav = (v, icon, label, extra = "") => `<button cla
     act = c.live_job ? `<button class="btn danger" data-act="stoplive" data-j="${esc(c.live_job)}">${ic("stop")}Stop recording</button>`
                      : `<button class="btn primary" data-act="golive"><span class="rdot"></span>${liveOn(c).length ? "Record live stream" : "Start recording"}</button>`;
   }
-  if (S.view === "overview" || S.view === "library") act = `<button class="btn" data-act="feedback">${ic("chat")}Feedback</button>`;
+  if (S.view === "overview" || S.view === "library") {
+    const L = S.status.links || {};
+    act = (L.repo ? `<a class="btn" href="${esc(L.repo)}" target="_blank" rel="noopener" title="Star PeakCut on GitHub">${ic("github")}<span>Star<span class="long"> on GitHub</span></span></a>` : "")
+        + (L.follow ? `<a class="btn primary" href="${esc(L.follow)}" target="_blank" rel="noopener" title="Follow the maker of PeakCut on Instagram">${ic("instagram")}Follow me</a>` : "");
+  }
   const me = S.status.user;
   const kk = S.status.ai;
   put($("#vbanner"), me && me.verified === false ? `<div class="vb" role="status">${ic("warn")}<span>Confirm your email to start clipping. We sent a link to <b>${esc(me.email)}</b>.</span><button class="btn sm" data-act="resendverify">Send a new link</button></div>`
@@ -2344,9 +2304,6 @@ document.addEventListener("click", async e => {
     if (a === "igform") { const x = $("#igbox"); x.hidden = !x.hidden; if (!x.hidden) $("#igtoken").focus(); return; }
     if (a === "bell") return openBell();
     if (a === "feedback") return openFeedback("bug");
-    if (a === "fbclose") return closeFeedback();
-    if (a === "fbkind") { const p = $("#fbpop"), m = $("#fbmsg").value; p.dataset.kind = d.k; $$("#fbpop [data-act=fbkind]").forEach(x => x.setAttribute("aria-pressed", String(x === b))); $("#fbmsg").placeholder = FB[d.k][2]; $("#fbmsg").value = m; return; }
-    if (a === "fbsend") return sendFeedback(b);
     if (a === "report") return openFeedback("bug", d.ctx);
     if (a === "acctmenu") return openAcct();
     if (a === "bellread") { await markRead(); return openBell().then(openBell); }
