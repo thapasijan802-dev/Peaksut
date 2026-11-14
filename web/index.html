@@ -1445,7 +1445,7 @@ const fmtSize = b => b >= 1e9 ? (b / 1e9).toFixed(1) + " GB" : Math.max(1, Math.
 const isChannel = u => /^(https?:\/\/)?(www\.)?(twitch\.tv|kick\.com)\/[A-Za-z0-9_]+\/?$/.test(u) || /youtube\.com\/(@[^/]+|channel\/[^/]+)\/?(live|videos|streams)?\/?$/.test(u);
 const looksLink = u => /^https?:\/\/([\w-]+\.)*(youtube\.com|youtu\.be|twitch\.tv|kick\.com)\//i.test(u);
 const fullLink = u => /[?&]v=[\w-]{11}\b|youtu\.be\/[\w-]{11}\b|\/(shorts|live|embed)\/[\w-]{11}\b|twitch\.tv\/videos\/\d{6,}|clips\.twitch\.tv\/\w|twitch\.tv\/\w+\/clip\/\w|kick\.com\/[\w-]+\/(videos?|clips?)\/[\w-]{6,}/i.test(u);
-const batchMax = () => S.status.max_batch || 3;
+const batchMax = () => S.status.max_batch || 5;
 const batchUsed = A => A.files.length + A.links.filter(l => l.state !== "bad").length;
 const newId = () => Math.random().toString(36).slice(2);
 
@@ -2340,9 +2340,14 @@ document.addEventListener("click", async e => {
       if (!creator().channel) { setTab("setup"); return toast("Connect one of their channels first, then press Start recording.", "bad"); }
       b.disabled = true; const was = b.innerHTML; b.innerHTML = `<span class="rdot"></span>Starting…`;
       try {
-        const j = await send(`/api/creators/${creatorId()}/live`, d.url ? {channel: d.url} : {});
-        if (j?.id) { const c = creator(); if (c) c.live_job = j.id; if (!jobOf(j.id)) S.jobs.unshift(j); render(); }
-        toast("Recording started. Clips appear below as they're made.", "ok"); setTab("clips");
+        // The creator is fixed before asking: starting can take a few seconds, and the person may open another
+        // creator meanwhile. The recording must stay with the one whose button was pressed.
+        const cid0 = creatorId();
+        const j = await send(`/api/creators/${cid0}/live`, d.url ? {channel: d.url} : {});
+        if (j?.id) { const c = S.creators.find(x => x.id === cid0); if (c) c.live_job = j.id; if (!jobOf(j.id)) S.jobs.unshift(j); render(); }
+        const still = creatorId() === cid0;
+        toast(still ? "Recording started. Clips appear below as they're made." : `Recording started for ${S.creators.find(x => x.id === cid0)?.name || "that creator"}.`, "ok");
+        if (still) setTab("clips");
       } catch (e) { b.disabled = false; b.innerHTML = was; throw e; }
       return tick();
     }

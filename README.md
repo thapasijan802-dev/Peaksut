@@ -147,7 +147,8 @@ docker compose up -d --build
 - Each person's videos wait in their own line and the lines take turns, so one person cannot hold everyone up.
 - The server measures its own processor, memory and disk every second. Extra videos and recordings start only
   while there is room, wait briefly when it is nearly full, and continue the moment it frees up.
-- Uploads, video length, storage per account and request sizes all have limits, set in `.env`.
+- There are no limits on upload size, video length, recordings, creators or storage unless you set them in
+  `.env`. Five videos can be sent at once. Request sizes are always capped, so junk can't fill the memory.
 
 ## Tests
 

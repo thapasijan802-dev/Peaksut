@@ -810,8 +810,8 @@ def upload_start(body: dict = Body(...)):
             mine += json.loads((d / "meta.json").read_text(encoding="utf-8")).get("user") == ctx.uid()
         except (OSError, ValueError):
             pass
-    if mine >= 4:
-        raise HTTPException(429, "You already have several uploads in progress. Let one finish first.")
+    if mine >= config.MAX_ACTIVE_JOBS_PER_USER:
+        raise HTTPException(429, f"You already have {mine} uploads in progress. Let one finish first.")
     part = config.UPLOAD_PART_MB * 1024 * 1024
     upid = os.urandom(12).hex()
     d = _up_root() / f"up-{upid}"
@@ -1132,8 +1132,8 @@ def list_creators():
 @app.post("/api/creators")
 def new_creator(body: dict = Body(...)):
     _channel_ok(body)
-    if len(creators.all_creators()) >= 50:
-        raise HTTPException(400, "You've reached the limit of 50 creators.")
+    if len(creators.all_creators()) >= config.MAX_CREATORS:
+        raise HTTPException(400, f"This server allows {config.MAX_CREATORS} creators per account.")
     try:
         c = creators.create(body)
     except ValueError as e:
