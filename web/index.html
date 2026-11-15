@@ -1211,12 +1211,11 @@ function updateHow() {
   const up = S.status?.update, d = $("#formdlg"); if (!up || d.open) return;
   const ai = "Update this PeakCut folder to the latest version from GitHub (git pull), keep my .env and data folder as they are, install any new requirements, and restart PeakCut.";
   const cmd = (label, text) => `<h3>${label}</h3><div class="cmd"><code>${esc(text)}</code><button class="btn sm" type="button" data-act="copytext" data-t="${esc(text)}">${ic("copy")}Copy</button></div>`;
-  d.innerHTML = `<form method="dialog" class="dlg upd"><h2>A new version of PeakCut is out</h2>
-    <p class="help">You're on <b>${esc(up.current)}</b>. ${up.behind} update${up.behind === 1 ? " has" : "s have"} been added since. Your settings, keys and clips stay as they are.</p>
+  d.innerHTML = `<form method="dialog" class="dlg upd"><h2>${up.restart ? "The new version is ready" : "A new version of PeakCut is out"}</h2>
+    <p class="help">${up.restart ? "The new files are already in the PeakCut folder. <b>Close PeakCut and start it again</b> to use them." : `You're on <b>${esc(up.current)}</b>. ${up.behind ? `${up.behind} update${up.behind === 1 ? " has" : "s have"} been added since.` : "Newer changes have been added since."}`} Your settings, keys and clips stay as they are.</p>
     ${up.notes.length ? `<ul>${up.notes.map(n => `<li>${esc(n.title)} <small>${esc(n.date)}</small></li>`).join("")}</ul>` : ""}
-    ${cmd("Ask your AI coding assistant (Claude, Cursor, Copilot...)", ai)}
-    ${cmd("Or run it yourself, in the PeakCut folder", "git pull && pip install -r requirements.txt")}
-    <p class="sub">Then stop PeakCut and start it again. With Docker, run <code>git pull && docker compose up -d --build</code> instead. <a class="lnk" href="${esc(up.url)}" target="_blank" rel="noopener">See every change on GitHub</a></p>
+    ${up.restart ? "" : cmd("Ask your AI coding assistant (Claude, Cursor, Copilot...)", ai) + cmd("Or run it yourself, in the PeakCut folder", "git pull && pip install -r requirements.txt")}
+    <p class="sub">${up.restart ? "" : "Then stop PeakCut and start it again. With Docker, run <code>git pull && docker compose up -d --build</code> instead. "}<a class="lnk" href="${esc(up.url)}" target="_blank" rel="noopener">See every change on GitHub</a></p>
     <div class="dlg-foot"><button class="btn" value="later">Remind me next version</button><button class="btn primary" value="ok" autofocus>Got it</button></div></form>`;
   d.onclose = () => { if (d.returnValue === "later") { try { localStorage.setItem("peakcut_update_seen", up.latest); } catch {} drawShell(); } };
   d.returnValue = "ok"; d.showModal();
@@ -1281,8 +1280,8 @@ function drawShell() {  const nav = (v, icon, label, extra = "") => `<button cla
   const up = S.status.update;
   let upSeen = "";
   try { upSeen = localStorage.getItem("peakcut_update_seen") || ""; } catch {}
-  const upBar = up && up.latest !== upSeen ? `<div class="vb" role="status">${ic("up")}<span>A new version of PeakCut is out: <b>${up.behind} update${up.behind === 1 ? "" : "s"}</b> since yours.</span>
-    <button class="btn sm primary" data-act="updhow">How to update</button><button class="btn sm ghost" data-act="updlater" aria-label="Hide until the next version">Later</button></div>` : "";
+  const upBar = up && up.latest !== upSeen ? `<div class="vb" role="status">${ic("up")}<span>${up.restart ? "<b>The new version is downloaded.</b> Close PeakCut and start it again to use it." : `A new version of PeakCut is out${up.behind ? `: <b>${up.behind} update${up.behind === 1 ? "" : "s"}</b> since yours` : ""}.`}</span>
+    <button class="btn sm primary" data-act="updhow">${up.restart ? "What's new" : "How to update"}</button><button class="btn sm ghost" data-act="updlater" aria-label="Hide until the next version">Later</button></div>` : "";
   const toolBar = S.status.no_ffmpeg ? `<div class="vb" role="alert">${ic("warn")}<span><b>PeakCut can't make clips yet: ffmpeg isn't installed on this computer.</b> Open a terminal, run <code>winget install Gyan.FFmpeg</code> (Mac: <code>brew install ffmpeg</code>, Linux: <code>sudo apt install ffmpeg</code>), then close PeakCut and start it again.</span></div>` : "";
   const aiBar = !toolBar && S.status.ai?.problem && me?.is_admin && S.view !== "settings" ? `<div class="vb" role="status">${ic("warn")}<span><b>The AI isn't answering.</b> ${esc(S.status.ai.problem)} Until then, clips are picked by loudness.</span><button class="btn sm primary" data-act="go" data-v="settings" data-tab="ai">Open AI settings</button></div>` : "";
   put($("#vbanner"), toolBar ? toolBar : aiBar ? aiBar : upBar ? upBar : me && me.verified === false ? `<div class="vb" role="status">${ic("warn")}<span>Confirm your email to start clipping. We sent a link to <b>${esc(me.email)}</b>.</span><button class="btn sm" data-act="resendverify">Send a new link</button></div>`

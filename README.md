@@ -125,7 +125,8 @@ assistants.
 
 ## Updating
 
-PeakCut checks GitHub every few hours. When a newer version is out, the dashboard shows a notice with what changed
+PeakCut checks GitHub once a minute while it runs. When a newer version is out, the dashboard shows a notice
+within a minute or two (no restart needed), with what changed
 and how to update: ask your AI coding assistant to do it (the notice has a sentence to paste), or run
 `git pull && pip install -r requirements.txt` in the PeakCut folder and restart it (with Docker:
 `git pull && docker compose up -d --build`). Your `.env`, keys and clips are not touched. Only the two commit ids

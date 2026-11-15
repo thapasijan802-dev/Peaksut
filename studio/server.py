@@ -72,6 +72,8 @@ def _startup():
     jobs.start()
     live.start()
     posting.start()
+    from . import updates
+    updates.start()                  # looks for a newer PeakCut every minute, in the background
 
 
 # ================================================================ the gate: who is asking, and are they allowed
