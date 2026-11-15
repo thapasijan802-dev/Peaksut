@@ -175,6 +175,7 @@ def ask_ai(prompt, schema=None, purpose="AI call"):
             try:
                 out, sent, wrote = ai.call(model, prompt, schema or SCHEMA)
                 usage.record(sent, wrote, purpose)
+                ai.clear_problem()
                 return out, model, sent + wrote
             except Exception as e:  # noqa: BLE001
                 last = e
@@ -182,7 +183,8 @@ def ask_ai(prompt, schema=None, purpose="AI call"):
                     time.sleep(4 * (attempt + 1))
                     continue
                 break
-    raise RuntimeError(f"The AI did not answer: {last}")
+    ai.note_problem(last)
+    raise RuntimeError(f"The AI did not answer: {ai.explain(last) or last}")
 
 
 def sentence_ends(words) -> list:

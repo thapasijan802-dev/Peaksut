@@ -23,7 +23,8 @@ creator's live stream and clip the highlights while the stream is still running.
 
 ## Quick start
 
-You need Python 3.10 or newer and `ffmpeg` on your PATH.
+You need Python 3.10 or newer and `ffmpeg`. On Windows: `winget install Gyan.FFmpeg`. On a Mac: `brew install ffmpeg`.
+On Linux: `sudo apt install ffmpeg`. PeakCut finds it by itself and tells you in the dashboard if it is missing.
 
 ```bash
 git clone <this repository> peakcut
@@ -37,15 +38,13 @@ cd peakcut
 pip install -r requirements.txt
 ```
 
-Download the speech model once (about 480 MB) and start the server:
-
-```bash
-python -m studio.fetch_model
-```
+Start the server:
 
 ```bash
 python -m studio.server
 ```
+
+The first start downloads the speech model by itself (about 480 MB, once).
 
 Open http://127.0.0.1:8765. There is no sign-in: it opens straight into the dashboard. Go to **Settings, AI**, choose
 your AI service, paste your key and press **Save and test** (see [Choose your AI](#choose-your-ai)).

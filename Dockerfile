@@ -21,5 +21,5 @@ ENV PEAKCUT_DATA=/data \
 VOLUME /data
 EXPOSE 8765
 HEALTHCHECK --interval=30s --timeout=5s --start-period=120s CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8765/healthz', timeout=4)"
-# the first start downloads the speech model into /data/models (about 480 MB)
-CMD ["sh", "-c", "python -m studio.fetch_model && python -m studio.server"]
+# the first start downloads the speech model into /data/models by itself (about 480 MB)
+CMD ["python", "-m", "studio.server"]
