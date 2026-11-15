@@ -96,8 +96,7 @@ class Gate:
             await resp(scope, receive, send)
 
         if method not in ("GET", "HEAD", "OPTIONS"):
-            origin = req.headers.get("origin")
-            if origin and urlparse(origin).netloc != req.headers.get("host") and origin.rstrip("/") != config.PUBLIC_URL:
+            if not _from_here(req):
                 return await deny(403, "Cross-site requests are not allowed.")
             # Only the upload may be big. Everything else is a small form, and is cut off at 256 KB whatever its
             # headers claim, so nobody can fill the server's memory by posting junk (signed in or not).
@@ -144,8 +143,7 @@ class Gate:
                 return await deny(404, "Not Found")
             if method not in ("GET", "HEAD"):
                 # changes must come from our own pages: the browser has to say so, and it has to match
-                origin = (req.headers.get("origin") or "").rstrip("/")
-                if not origin or (urlparse(origin).netloc != req.headers.get("host") and origin != config.PUBLIC_URL):
+                if not _from_here(req, must_say=True):
                     return await deny(403, "Cross-site requests are not allowed.")
         if not user and not is_open:
             if path == "/app" or path.startswith("/app/"):
@@ -261,6 +259,21 @@ def _ip(request: Request) -> str:
     if named and request.headers.get(named) and _from_cdn(peer):
         return request.headers[named].split(",")[0].strip()[:64]
     return peer
+
+
+def _from_here(req, must_say=False) -> bool:
+    """Did this change come from PeakCut's own page, and not from another website?
+
+    The browser's own answer is trusted first: it marks every request "same-origin" or not, and a web page cannot
+    fake that mark. Comparing the page's address with the address the request arrived at is only the fallback,
+    because that comparison goes wrong when something in between rewrites either of them (a proxy, an antivirus
+    web shield, a browser extension), which made every save fail with "Cross-site requests are not allowed"."""
+    if (req.headers.get("sec-fetch-site") or "").lower() == "same-origin":
+        return True
+    origin = (req.headers.get("origin") or "").rstrip("/").lower()
+    if not origin:
+        return not must_say
+    return urlparse(origin).netloc == (req.headers.get("host") or "").lower() or origin == config.PUBLIC_URL.lower()
 
 
 def _own_address(host: str) -> bool:
