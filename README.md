@@ -123,6 +123,14 @@ Data is kept per user: accounts in the database (SQLite on your own computer, Po
 clips in each user's own folder. [AGENTS.md](AGENTS.md) is a short map of the code for contributors and AI coding
 assistants.
 
+## Where your videos and clips are kept
+
+Everything PeakCut keeps is in one folder: videos, clips, recordings, creators, settings and the speech model. By
+default it is the `data` folder inside PeakCut. **Settings, Storage** shows the folder and how much room its drive
+has, opens it in one click, and lets you move it to another drive: choose the new folder, and PeakCut moves
+everything there the next time it starts. If the drive is nearly full, PeakCut says so and stops taking new videos
+until there is room. (`PEAKCUT_DATA` in `.env` still works and takes priority.)
+
 ## Updating
 
 PeakCut checks GitHub once a minute while it runs. When a newer version is out, the dashboard shows a notice

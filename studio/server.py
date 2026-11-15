@@ -558,7 +558,7 @@ def status(request: Request):
     from . import notices
     from . import updates
     me_ = _me(request)
-    return {"user": auth.public(me_), "update": updates.latest() if me_.is_admin else None, "accounts": config.ACCOUNTS, "no_ffmpeg": bool(_tools.missing()), "links": {"repo": config.REPO_URL, "follow": config.FOLLOW_URL}, "ai": usage.brief(), "unread": notices.unread(),
+    return {"user": auth.public(me_), "update": updates.latest() if me_.is_admin else None, "accounts": config.ACCOUNTS, "disk_full": load.disk_full(), "no_ffmpeg": bool(_tools.missing()), "links": {"repo": config.REPO_URL, "follow": config.FOLLOW_URL}, "ai": usage.brief(), "unread": notices.unread(),
             "tour": not accounts.settings()["tour_done"],
             "youtube": accounts.youtube_ready(), "connect": {p: accounts.can_connect(p) for p in accounts.PLATFORM_NAMES}, "max_upload_mb": config.MAX_UPLOAD_MB, "upload_part_mb": config.UPLOAD_PART_MB, "max_batch": config.MAX_ACTIVE_JOBS_PER_USER,
             "styles": {k: v["label"] for k, v in render.STYLES.items()}, "layouts": render.LAYOUTS}
@@ -588,7 +588,8 @@ _disk: dict = {}
 def _quota():
     """Each account has a fixed amount of disk space. Measured at most once a minute."""
     if load.disk_full():
-        raise HTTPException(503, "PeakCut is out of space for new videos for the moment. Please try again shortly.")
+        from . import storage
+        raise HTTPException(507, storage.full_message())
     uid = ctx.uid()
     got = _disk.get(uid)
     if not got or time.time() - got[0] > 60:
@@ -1363,6 +1364,56 @@ def public_clip(token: str):
     if not f or not f.is_file():
         raise HTTPException(404)
     return FileResponse(f, media_type="video/mp4", headers={"Cache-Control": "private, no-store"})
+
+
+# ---------------------------------------------------------------- where PeakCut keeps everything (Settings, Storage)
+def _on_this_computer(request: Request) -> bool:
+    """Is the person sitting at the computer PeakCut runs on? Only then can a folder window be opened for them."""
+    host = request.client.host if request.client else ""
+    return host in ("127.0.0.1", "::1", "localhost") and not config.env("PEAKCUT_TRUST_PROXY")
+
+
+@app.get("/api/storage")
+def storage_get(request: Request):
+    from . import storage
+    _admin(request)
+    return storage.info(_on_this_computer(request))
+
+
+@app.post("/api/storage/open")
+def storage_open(request: Request):
+    from . import storage
+    _admin(request)
+    if not _on_this_computer(request):
+        raise HTTPException(400, "The folder can only be opened on the computer PeakCut runs on.")
+    try:
+        storage.open_folder()
+    except OSError as e:
+        raise HTTPException(500, "Couldn't open the folder: " + safe.friendly(e, 200))
+    return {"ok": True}
+
+
+@app.post("/api/storage/pick")
+def storage_pick(request: Request):
+    from . import storage
+    _admin(request)
+    if not _on_this_computer(request):
+        raise HTTPException(400, "Type the folder's path instead: a folder window can only be shown on the computer PeakCut runs on.")
+    return {"path": storage.pick_folder()}
+
+
+@app.put("/api/storage")
+def storage_put(request: Request, body: dict = Body(...)):
+    from . import storage
+    _admin(request)
+    try:
+        if body.get("cancel"):
+            storage.cancel_change()
+            return storage.info(_on_this_computer(request))
+        storage.change(str(body.get("path") or ""), bool(body.get("move", True)))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return storage.info(_on_this_computer(request))
 
 
 @app.get("/api/apps")
