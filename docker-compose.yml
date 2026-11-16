@@ -33,13 +33,13 @@ services:
     volumes:
       - data:/data
       - ./studio:/app/studio
+      - ./web:/app/web
       - ./secrets:/secrets:ro
       - ./.git:/app/.git:ro            # only to tell which version is running, for the update notice
     # Reachable from this server only. On a server that already has a web server, point that one at this port
     # (see deploy/nginx-peakcut.conf). With the "own-https" profile, Caddy below is the web server instead.
     ports:
-      - "127.0.0.1:8765:8765"
-      - "0.0.0.0:8765:8765" 
+      - "127.0.0.1:8765:8765" 
     # On a server shared with other apps, these keep PeakCut inside its own share (all unlimited by default):
     # a memory ceiling with no swap, a processor ceiling, a lower turn at the processor when the server is busy,
     # and "stop this one first" if the whole server ever runs out of memory.
