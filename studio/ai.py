@@ -78,6 +78,28 @@ def key() -> str:
     return current()["key"]
 
 
+def keys() -> list:
+    raw = key()
+    if not raw:
+        return []
+    return [k.strip() for k in raw.split(",") if k.strip()]
+
+
+_key_idx = 0
+_key_lock = threading.Lock()
+
+
+def rotated_keys() -> list:
+    global _key_idx
+    kl = keys()
+    if not kl:
+        return []
+    with _key_lock:
+        idx = _key_idx % len(kl)
+        _key_idx += 1
+    return kl[idx:] + kl[:idx]
+
+
 def label() -> str:
     return PROVIDERS.get(provider(), ("",))[0]
 
@@ -97,7 +119,7 @@ def public() -> dict:
     its last four characters so the owner can tell which key it is."""
     c = current()
     return {"provider": c["provider"], "models": c["models"], "base_url": c["base_url"], "has_key": bool(c["key"]),
-            "key_hint": c["key"][-4:] if len(c["key"]) >= 12 else "", "ready": ready(), "label": label(),
+            "key_hint": (f"{len(keys())} keys (..{keys()[0][-4:]})" if len(keys()) > 1 else (keys()[0][-4:] if keys() and len(keys()[0]) >= 12 else "")), "ready": ready(), "label": label(),
             "saved_here": bool(_from_dashboard().get("provider")),
             "providers": [{"id": k, "label": v[0], "address": v[1], "needs_key": k not in NO_KEY, "key_url": v[3], "example": v[4]}
                           for k, v in PROVIDERS.items()]}
@@ -209,7 +231,9 @@ def clear_problem():
 
 
 def _fail(r, model):
-    text = r.text[:300].replace(key() or "\0", "<key>")
+    text = r.text[:300]
+    for k in keys():
+        text = text.replace(k, "<key>")
     raise AIError(f"HTTP {r.status_code} {text}")
 
 
@@ -254,14 +278,25 @@ def call(model: str, prompt: str, schema: dict):
 def _gemini(model, prompt, schema):
     body = {"contents": [{"role": "user", "parts": [{"text": prompt}]}],
             "generationConfig": {"temperature": 0.4, "responseMimeType": "application/json", "responseSchema": schema}}
-    r = httpx.post(f"{base_url()}/{model}:generateContent", json=body, headers={"x-goog-api-key": key()}, timeout=120)
-    if r.status_code != 200:
-        _fail(r, model)
-    data = r.json()
-    text = "".join(p.get("text", "") for p in data["candidates"][0]["content"]["parts"])
-    u = data.get("usageMetadata", {})
-    sent = int(u.get("promptTokenCount") or 0)
-    return json.loads(text), sent, max(0, int(u.get("totalTokenCount") or 0) - sent)   # the answer, and any thinking billed with it
+    kl = rotated_keys()
+    if not kl:
+        raise AIError("No API key configured.")
+    last_err = None
+    for k in kl:
+        r = httpx.post(f"{base_url()}/{model}:generateContent", json=body, headers={"x-goog-api-key": k}, timeout=120)
+        if r.status_code == 200:
+            data = r.json()
+            text = "".join(p.get("text", "") for p in data["candidates"][0]["content"]["parts"])
+            u = data.get("usageMetadata", {})
+            sent = int(u.get("promptTokenCount") or 0)
+            return json.loads(text), sent, max(0, int(u.get("totalTokenCount") or 0) - sent)
+        elif r.status_code in (429, 403, 500, 503):
+            last_err = r
+            continue
+        else:
+            _fail(r, model)
+    if last_err is not None:
+        _fail(last_err, model)
 
 
 def _openai(model, prompt, schema):
