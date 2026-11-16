@@ -22,7 +22,7 @@ PROVIDERS = {
     "gemini": ("Gemini", "https://generativelanguage.googleapis.com/v1beta/models", "gemini", "https://aistudio.google.com/apikey", "gemini-2.5-flash"),
     "openai": ("OpenAI", "https://api.openai.com/v1", "openai", "https://platform.openai.com/api-keys", "gpt-4o-mini"),
     "xai": ("Grok", "https://api.x.ai/v1", "openai", "https://console.x.ai", "grok-4"),
-    "groq": ("Groq", "https://api.groq.com/openai/v1", "openai", "https://console.groq.com/keys", "llama-3.3-70b-versatile"),
+    "groq": ("Groq", "https://api.groq.com/openai/v1", "openai", "https://console.groq.com/keys", "openai/gpt-oss-120b"),
     "openrouter": ("OpenRouter", "https://openrouter.ai/api/v1", "openai", "https://openrouter.ai/keys", "google/gemini-2.5-flash"),
     "anthropic": ("Claude", "https://api.anthropic.com/v1", "anthropic", "https://console.anthropic.com", ""),
     "ollama": ("Ollama (on this machine)", "http://127.0.0.1:11434/v1", "openai", "https://ollama.com", "llama3.1"),
@@ -75,7 +75,10 @@ def models() -> list:
 
 
 def key() -> str:
-    return current()["key"]
+    k = current()["key"]
+    if not k and provider() == "groq":
+        return getattr(config, "GROQ_KEY", "")
+    return k
 
 
 def keys() -> list:
@@ -269,10 +272,33 @@ def _parse(text):
 
 
 # ---------------------------------------------------------------- one call
+def _groq_fallback(model: str, prompt: str, schema: dict):
+    g_key = getattr(config, "GROQ_KEY", "")
+    if not g_key:
+        raise AIError("No Groq key configured.")
+    headers = {"Authorization": f"Bearer {g_key}"}
+    body = {"model": model, "messages": [{"role": "user", "content": _wrapped(prompt, schema)}],
+            "response_format": {"type": "json_object"}, "temperature": 0.4}
+    r = httpx.post("https://api.groq.com/openai/v1/chat/completions", json=body, headers=headers, timeout=120)
+    if r.status_code != 200:
+        raise AIError(f"Groq HTTP {r.status_code}: {r.text[:200]}")
+    data = r.json()
+    u = data.get("usage") or {}
+    return _parse(data["choices"][0]["message"].get("content")), int(u.get("prompt_tokens") or 0), int(u.get("completion_tokens") or 0)
+
+
 def call(model: str, prompt: str, schema: dict):
     """Ask one model. Returns (the parsed JSON answer, tokens sent, tokens written back)."""
     how = PROVIDERS[provider()][2]
-    return {"gemini": _gemini, "openai": _openai, "anthropic": _anthropic}[how](model, prompt, schema)
+    try:
+        return {"gemini": _gemini, "openai": _openai, "anthropic": _anthropic}[how](model, prompt, schema)
+    except Exception as e:
+        if provider() == "gemini" and getattr(config, "GROQ_KEY", ""):
+            try:
+                return _groq_fallback("openai/gpt-oss-120b", prompt, schema)
+            except Exception:
+                pass
+        raise e
 
 
 def _gemini(model, prompt, schema):
