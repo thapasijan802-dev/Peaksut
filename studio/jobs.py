@@ -384,9 +384,62 @@ def render_one(job, clip, words):
                 clip.update(fixed_words=raw, fixed_for=span)
             except Exception:  # noqa: BLE001 - captions still render with the words as heard
                 pass
-        # the last word on it: whatever was said, nothing is drawn in Hindi or Urdu script
-        near = [dict(w, s=w["s"] - off, e=w["e"] - off) for w in roman.words(raw)]
-        out = render.render_clip(src, d / "clips", clip["id"], local, near, job["width"], job["height"])
+        # FLASH-FORWARD HOOK STITCHING:
+        render_src = src
+        c_start = clip.get("climax_start")
+        c_end = clip.get("climax_end")
+        if not c_start or not c_end or c_start < clip["start"] or c_end > clip["end"] or c_end <= c_start:
+            c_start = max(clip["start"], clip["end"] - 3.2)
+            c_end = min(clip["end"], c_start + 2.0)
+
+        hook_dur = round(c_end - c_start, 2)
+        ctx_dur = round(clip["end"] - clip["start"], 2)
+
+        stitched_file = d / "clips" / f"{clip['id']}.ff.src.mp4"
+        sfx_path = Path(__file__).resolve().parent / "impact.mp3"
+        try:
+            from . import flash_forward_engine
+            rel_hook_start = max(0.0, c_start - off)
+            rel_hook_end = rel_hook_start + hook_dur
+            rel_ctx_start = max(0.0, clip["start"] - off)
+            rel_ctx_end = rel_ctx_start + ctx_dur
+
+            flash_forward_engine.stitch_clip_with_hook(
+                src_video=str(src),
+                hook_rel_start=rel_hook_start,
+                hook_rel_end=rel_hook_end,
+                ctx_rel_start=rel_ctx_start,
+                ctx_rel_end=rel_ctx_end,
+                output_path=str(stitched_file),
+                sfx_path=str(sfx_path) if sfx_path.is_file() else "",
+            )
+            render_src = stitched_file
+
+            # Subtitle remapping: Hook words first (0 to hook_dur), then full context words (hook_dur to hook_dur + ctx_dur)
+            stitched_words = []
+            for w in raw:
+                if c_start - 0.05 <= w["s"] < c_end:
+                    stitched_words.append({
+                        "w": w["w"],
+                        "s": round(w["s"] - c_start, 2),
+                        "e": round(min(hook_dur, w["e"] - c_start), 2)
+                    })
+            for w in raw:
+                if clip["start"] - 0.05 <= w["s"] < clip["end"]:
+                    stitched_words.append({
+                        "w": w["w"],
+                        "s": round(hook_dur + (w["s"] - clip["start"]), 2),
+                        "e": round(hook_dur + (w["e"] - clip["start"]), 2)
+                    })
+            near = [dict(w, s=w["s"], e=w["e"]) for w in roman.words(stitched_words)]
+            local = dict(clip, start=0.0, end=round(hook_dur + ctx_dur, 2), hook=roman.to_roman(clip.get("hook") or ""))
+        except Exception as e:
+            print(f"Flash-Forward hook stitching skipped for {clip['id']}: {e}")
+            near = [dict(w, s=w["s"] - off, e=w["e"] - off) for w in roman.words(raw)]
+            local = dict(clip, start=clip["start"] - off, end=clip["end"] - off, hook=roman.to_roman(clip.get("hook") or ""))
+            render_src = src
+
+        out = render.render_clip(render_src, d / "clips", clip["id"], local, near, job["width"], job["height"])
         clip.update(out, status="done", version=clip.get("version", 0) + 1, error=None)
         post = {k: clip[k] for k in ("title", "description", "hashtags", "hook", "start", "end", "score")}
         (d / "clips" / f"{clip['id']}.json").write_text(json.dumps(post, indent=1), encoding="utf-8")
@@ -591,7 +644,7 @@ def _run_job(job):
             render_one(job, clip, words_now)
 
     cpus = os.cpu_count() or 4
-    renders = ThreadPoolExecutor(2 if cpus < 8 else min(6, cpus // 6))  # more clips made at once on a bigger machine
+    renders = ThreadPoolExecutor(1)  # more clips made at once on a bigger machine
     futures = []
     step = BLOCK * 16000 if span > PROGRESSIVE_FROM else hi - lo
     blocks = [(x, min(hi, x + step)) for x in range(lo, hi, step)] or [(lo, hi)]

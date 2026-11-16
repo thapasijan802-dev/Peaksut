@@ -48,7 +48,7 @@ def note_refusal(url: str, err) -> bool:
     """If this error is YouTube refusing the server, pause YouTube links for a while. True if it was."""
     global _yt_refused_until
     if is_youtube(url) and _BOT_CHECK.search(str(err)):
-        _yt_refused_until = time.time() + YT_PAUSE
+        _yt_refused_until = 0
         return True
     return False
 
@@ -97,14 +97,20 @@ class _Quiet:
 
 def _ydl(opts):
     import yt_dlp
-    # a channel or playlist link is answered as "a list" straight away, never walked video by video
+    extra = {
+        "remote_components": ["ejs:github"],
+    }
+    cookie_path = config.DATA_DIR / "cookies.txt"
+    if cookie_path.exists():
+        extra["cookiefile"] = str(cookie_path)
     return yt_dlp.YoutubeDL({"noplaylist": True, "quiet": True, "no_warnings": True, "logger": _Quiet(),
-                             "extract_flat": "in_playlist", "playlistend": 1, "socket_timeout": 20,
-                             "concurrent_fragment_downloads": 4, **opts})
+                             "extract_flat": "in_playlist", "playlistend": 1, "socket_timeout": 30,
+                             "concurrent_fragment_downloads": 4, **extra, **opts})
 
 
 def _video_format(height):
-    return f"bv*[height<={height}][vcodec^=avc1]+ba[ext=m4a]/bv*[height<={height}]+ba/b[height<={height}]/b"
+    hls_prio = "96/95/94/93/92/18" if height >= 1080 else ("95/94/93/92/18" if height >= 720 else "94/93/92/18")
+    return f"{hls_prio}/b[height<={height}][protocol^=m3u8]/b[protocol^=m3u8]/bv*[height<={height}][vcodec^=avc1]+ba[ext=m4a]/bv*[height<={height}]+ba/b[height<={height}]/b"
 
 
 def _biggest(job_dir: Path, stem: str) -> Path:
@@ -249,7 +255,7 @@ def download_audio(url: str, job_dir: Path, on_progress=None) -> Path:
         if on_progress and d.get("status") == "downloading" and total:
             on_progress(d.get("downloaded_bytes", 0) / total)
 
-    with _youtube_guard(url), _ydl({"format": "ba[ext=m4a]/ba/worst", "outtmpl": str(job_dir / "audio_src.%(ext)s"),
+    with _youtube_guard(url), _ydl({"format": "91/92/93/94/95/18/ba[protocol^=m3u8]/ba[ext=m4a]/ba/worst", "outtmpl": str(job_dir / "audio_src.%(ext)s"),
                "progress_hooks": [hook]}) as ydl:
         ydl.download([url])
     return _biggest(job_dir, "audio_src")

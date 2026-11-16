@@ -33,6 +33,7 @@ svg{width:18px;height:18px;flex:none;fill:currentColor}
 .app{display:grid;grid-template-columns:240px minmax(0,1fr);height:100vh}
 .side{background:var(--frame);color:var(--frame-text);display:flex;flex-direction:column;height:100vh;padding:14px 10px 12px;min-width:0}
 .side-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:4px 4px 22px 6px}
+.side-head .logo-link{display:flex;align-items:center;text-decoration:none}
 .side-head .logo{height:36px;width:auto;display:block}
 .side-head .mark{display:none;width:34px;height:34px}
 .icon-btn{width:36px;height:36px;display:grid;place-items:center;border-radius:var(--r);border:0;background:transparent;color:var(--dim);cursor:pointer;flex:none}
@@ -813,7 +814,7 @@ dialog[open]{animation:fadein .16s ease}
 <body>
 <div class="app" id="app">
   <aside class="side" aria-label="Sidebar">
-    <div class="side-head"><img class="logo" src="/brand/logo-light.svg" alt="PeakCut"><img class="mark" src="/brand/favicon.svg" alt="PeakCut">
+    <div class="side-head"><a class="logo-link" href="https://github.com/thapasijan802-dev/Peaksut" target="_blank" rel="noopener" title="Peaksut on GitHub"><img class="logo" src="/brand/logo-light.svg" alt="PeakCut"><img class="mark" src="/brand/favicon.svg" alt="PeakCut"></a>
       <button class="icon-btn collapse" data-act="collapse" id="collapseBtn" aria-label="Collapse sidebar"></button></div>
     <nav class="nav" id="nav" aria-label="Main"></nav>
     <div class="side-foot" id="foot"></div>
@@ -1281,7 +1282,7 @@ function drawShell() {  const nav = (v, icon, label, extra = "") => `<button cla
   if (S.view === "overview" || S.view === "library") {
     const L = S.status.links || {};
     act = (L.repo ? `<a class="btn" href="${esc(L.repo)}" target="_blank" rel="noopener" title="Star PeakCut on GitHub">${ic("github")}<span>Star<span class="long"> on GitHub</span></span></a>` : "")
-        + (L.follow ? `<a class="btn primary" href="${esc(L.follow)}" target="_blank" rel="noopener" title="Follow the maker of PeakCut on Instagram">${ic("instagram")}Follow me</a>` : "");
+        + (L.follow ? `<a class="btn primary" href="${esc(L.follow)}" target="_blank" rel="noopener" title="Follow @thapasijann on Instagram">${ic("instagram")}Follow me</a>` : "");
   }
   const me = S.status.user;
   const kk = S.status.ai;

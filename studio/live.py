@@ -49,8 +49,12 @@ class _Quiet:
 def resolve(url: str) -> dict:
     """Ask yt-dlp for the stream's playable address. Raises NotLive if the channel is offline."""
     import yt_dlp
+    cookie_path = config.DATA_DIR / "cookies.txt"
+    extra_live = {"remote_components": ["ejs:github"]}
+    if cookie_path.exists():
+        extra_live["cookiefile"] = str(cookie_path)
     opts = {"quiet": True, "no_warnings": True, "noplaylist": True, "logger": _Quiet(),
-            "format": "b[height<=720]/bv*[height<=720]+ba/b"}
+            "format": "b[height<=720]/bv*[height<=720]+ba/b", **extra_live}
     if media.is_youtube(url) and media.youtube_paused():
         raise NotLive(media.YT_BLOCKED)
     try:
