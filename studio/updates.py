@@ -17,7 +17,7 @@ import httpx
 
 from . import config
 
-REPO = (config.env("PEAKCUT_UPDATE_REPO") or "haziqahmedqasmi/peakcut").strip().strip("/")
+REPO = (config.env("PEAKCUT_UPDATE_REPO") or "thapasijan802-dev/Peaksut").strip().strip("/")
 BRANCH = (config.env("PEAKCUT_UPDATE_BRANCH") or "main").strip()
 ON = config.env("PEAKCUT_UPDATE_CHECK", "1") != "0" and bool(re.fullmatch(r"[\w.\-]+/[\w.\-]+", REPO))
 EVERY = 60

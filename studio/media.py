@@ -99,6 +99,11 @@ def _ydl(opts):
     import yt_dlp
     extra = {
         "remote_components": ["ejs:github"],
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["android", "ios", "tv", "web"],
+            }
+        },
     }
     cookie_path = config.DATA_DIR / "cookies.txt"
     if cookie_path.exists():
