@@ -8,9 +8,9 @@ import {
   ActivityIndicator,
   RefreshControl,
   Alert,
-  SafeAreaView,
   StyleSheet,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
