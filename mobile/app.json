@@ -7,12 +7,15 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
+    "backgroundColor": "#1E1612",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.peakcut.app"
+      "bundleIdentifier": "org.dpdns.peakcut.app"
     },
     "android": {
-      "package": "com.peakcut.app",
+      "package": "org.dpdns.peakcut.app",
+      "versionCode": 1,
+      "softwareKeyboardLayoutMode": "pan",
       "adaptiveIcon": {
         "backgroundColor": "#1E1612",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -29,7 +32,14 @@
       "expo-secure-store",
       "expo-video",
       "expo-sharing",
-      "expo-font"
+      "expo-font",
+      [
+        "expo-media-library",
+        {
+          "savePhotosPermission": "Allow PeakCut to save generated clips to your device gallery.",
+          "granularPermissions": ["video"]
+        }
+      ]
     ]
   }
 }

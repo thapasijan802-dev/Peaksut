@@ -95,7 +95,7 @@ export default function AccountScreen() {
         <ScrollView
           contentContainerStyle={{ padding: 16 }}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#FF8B33" />
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#FF8B33" colors={["#FF8B33"]} />
           }
         >
           {/* User Profile Card */}

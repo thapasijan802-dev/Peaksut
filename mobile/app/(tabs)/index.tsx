@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import {
   View,
   Text,
@@ -8,58 +8,112 @@ import {
   RefreshControl,
   Alert,
   SafeAreaView,
-  Dimensions,
 } from "react-native";
 import { useVideoPlayer, VideoView } from "expo-video";
 import * as FileSystem from "expo-file-system/legacy";
+import * as MediaLibrary from "expo-media-library/legacy";
 import * as Sharing from "expo-sharing";
 import * as Haptics from "expo-haptics";
 import { Ionicons } from "@expo/vector-icons";
-import { api, getAuthToken } from "../../src/api/client";
+import { api, getAuthToken, API_BASE } from "../../src/api/client";
 import { Clip } from "../../src/types";
 
-const { width } = Dimensions.get("window");
+interface ClipCardProps {
+  clip: Clip;
+  isActive: boolean;
+  token: string | null;
+}
 
-function ClipCard({ clip }: { clip: Clip }) {
+function ClipCard({ clip, isActive, token }: ClipCardProps) {
   const [downloading, setDownloading] = useState(false);
   const [sharing, setSharing] = useState(false);
 
-  const player = useVideoPlayer(clip.video_url, (p) => {
+  // Setup video source with session Cookie and Authorization headers
+  const videoSource = token
+    ? {
+        uri: clip.video_url,
+        headers: {
+          Cookie: `peakcut_session=${token}`,
+          Authorization: `Bearer ${token}`,
+          Origin: API_BASE,
+        },
+      }
+    : clip.video_url;
+
+  const player = useVideoPlayer(videoSource, (p) => {
     p.loop = true;
     p.muted = true;
   });
 
-  const handleDownload = async () => {
+  // Autoplay visible video, pause off-screen videos to save memory and audio overlap
+  useEffect(() => {
+    try {
+      if (isActive) {
+        player.play();
+      } else {
+        player.pause();
+      }
+    } catch {
+      // player state safeguard
+    }
+  }, [isActive, player]);
+
+  const handleDownloadToGallery = async () => {
     try {
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       setDownloading(true);
 
-      const token = await getAuthToken();
-      const filename = `${clip.id.replace(/[^a-zA-Z0-9_-]/g, "")}.mp4`;
-      const fileUri = `${FileSystem.documentDirectory}${filename}`;
+      // Request media library permission for video
+      const { status } = await MediaLibrary.requestPermissionsAsync(true, ["video"]);
+      if (status !== "granted") {
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+        Alert.alert(
+          "Gallery Permission Required",
+          "Please grant media permission so PeakCut can save generated clips directly to your Android device gallery."
+        );
+        return;
+      }
 
-      const res = await FileSystem.downloadAsync(clip.video_url, fileUri, {
-        headers: token
+      const authToken = await getAuthToken();
+      const sanitizedId = clip.id.replace(/[^a-zA-Z0-9_-]/g, "");
+      const tempUri = `${FileSystem.cacheDirectory}clip_${sanitizedId}.mp4`;
+
+      // Download file to cache
+      const downloadRes = await FileSystem.downloadAsync(clip.video_url, tempUri, {
+        headers: authToken
           ? {
-              Cookie: `peakcut_session=${token}`,
-              Authorization: `Bearer ${token}`,
+              Cookie: `peakcut_session=${authToken}`,
+              Authorization: `Bearer ${authToken}`,
+              Origin: API_BASE,
             }
-          : {},
+          : { Origin: API_BASE },
       });
 
+      // Save directly to device gallery
+      try {
+        await MediaLibrary.saveToLibraryAsync(downloadRes.uri);
+      } catch {
+        await MediaLibrary.createAssetAsync(downloadRes.uri);
+      }
+
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      Alert.alert("Clip Downloaded", `Saved to ${filename}`);
-      return res.uri;
+      Alert.alert("Saved to Gallery! 🎬", `"${clip.title || "Clip"}" has been saved to your Photos.`);
     } catch (err: any) {
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      Alert.alert("Download Error", err.message || "Failed to download clip.");
-      return null;
+      Alert.alert("Download Error", err.message || "Failed to download clip to gallery.");
     } finally {
+      // Clean up temporary cache file so phone storage is preserved
+      const sanitizedId = clip.id.replace(/[^a-zA-Z0-9_-]/g, "");
+      const tempUri = `${FileSystem.cacheDirectory}clip_${sanitizedId}.mp4`;
+      FileSystem.deleteAsync(tempUri, { idempotent: true }).catch(() => {});
       setDownloading(false);
     }
   };
 
   const handleShare = async () => {
+    const sanitizedId = clip.id.replace(/[^a-zA-Z0-9_-]/g, "");
+    const tempUri = `${FileSystem.cacheDirectory}share_${sanitizedId}.mp4`;
+
     try {
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       setSharing(true);
@@ -69,21 +123,19 @@ function ClipCard({ clip }: { clip: Clip }) {
         return;
       }
 
-      const token = await getAuthToken();
-      const filename = `share_${clip.id.replace(/[^a-zA-Z0-9_-]/g, "")}.mp4`;
-      const fileUri = `${FileSystem.cacheDirectory}${filename}`;
-
-      const fileInfo = await FileSystem.getInfoAsync(fileUri);
-      let targetUri = fileUri;
+      const authToken = await getAuthToken();
+      const fileInfo = await FileSystem.getInfoAsync(tempUri);
+      let targetUri = tempUri;
 
       if (!fileInfo.exists) {
-        const downloadRes = await FileSystem.downloadAsync(clip.video_url, fileUri, {
-          headers: token
+        const downloadRes = await FileSystem.downloadAsync(clip.video_url, tempUri, {
+          headers: authToken
             ? {
-                Cookie: `peakcut_session=${token}`,
-                Authorization: `Bearer ${token}`,
+                Cookie: `peakcut_session=${authToken}`,
+                Authorization: `Bearer ${authToken}`,
+                Origin: API_BASE,
               }
-            : {},
+            : { Origin: API_BASE },
         });
         targetUri = downloadRes.uri;
       }
@@ -96,6 +148,7 @@ function ClipCard({ clip }: { clip: Clip }) {
     } catch (err: any) {
       Alert.alert("Share Error", err.message || "Could not share clip.");
     } finally {
+      FileSystem.deleteAsync(tempUri, { idempotent: true }).catch(() => {});
       setSharing(false);
     }
   };
@@ -211,7 +264,7 @@ function ClipCard({ clip }: { clip: Clip }) {
         {/* Action Buttons */}
         <View style={{ flexDirection: "row", gap: 10 }}>
           <TouchableOpacity
-            onPress={handleDownload}
+            onPress={handleDownloadToGallery}
             disabled={downloading}
             activeOpacity={0.8}
             style={{
@@ -222,14 +275,15 @@ function ClipCard({ clip }: { clip: Clip }) {
               backgroundColor: "#FF8B33",
               borderRadius: 12,
               paddingVertical: 12,
+              opacity: downloading ? 0.7 : 1,
             }}
           >
             {downloading ? (
               <ActivityIndicator size="small" color="#1E1612" />
             ) : (
               <>
-                <Ionicons name="download-outline" size={18} color="#1E1612" style={{ marginRight: 6 }} />
-                <Text style={{ color: "#1E1612", fontWeight: "700", fontSize: 14 }}>Download</Text>
+                <Ionicons name="images-outline" size={18} color="#1E1612" style={{ marginRight: 6 }} />
+                <Text style={{ color: "#1E1612", fontWeight: "700", fontSize: 14 }}>Save to Gallery</Text>
               </>
             )}
           </TouchableOpacity>
@@ -248,6 +302,7 @@ function ClipCard({ clip }: { clip: Clip }) {
               paddingVertical: 12,
               borderWidth: 1,
               borderColor: "rgba(255, 255, 255, 0.12)",
+              opacity: sharing ? 0.7 : 1,
             }}
           >
             {sharing ? (
@@ -267,6 +322,8 @@ function ClipCard({ clip }: { clip: Clip }) {
 
 export default function ClipsFeedScreen() {
   const [clips, setClips] = useState<Clip[]>([]);
+  const [token, setToken] = useState<string | null>(null);
+  const [activeClipId, setActiveClipId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -274,15 +331,19 @@ export default function ClipsFeedScreen() {
   const loadClips = useCallback(async () => {
     try {
       setError(null);
-      const data = await api.clips.getRecent();
+      const [data, authToken] = await Promise.all([api.clips.getRecent(), getAuthToken()]);
       setClips(data);
+      setToken(authToken);
+      if (data.length > 0 && !activeClipId) {
+        setActiveClipId(data[0].id);
+      }
     } catch (err: any) {
       setError(err.message || "Failed to load clips from server.");
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [activeClipId]);
 
   useEffect(() => {
     loadClips();
@@ -293,6 +354,17 @@ export default function ClipsFeedScreen() {
     setRefreshing(true);
     loadClips();
   }, [loadClips]);
+
+  // Pause off-screen videos as the user scrolls through the vertical feed
+  const onViewableItemsChanged = useRef((info: { viewableItems: any[] }) => {
+    if (info.viewableItems.length > 0 && info.viewableItems[0].item) {
+      setActiveClipId(info.viewableItems[0].item.id);
+    }
+  }).current;
+
+  const viewabilityConfig = useRef({
+    itemVisiblePercentThreshold: 60,
+  }).current;
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: "#1E1612" }}>
@@ -372,10 +444,14 @@ export default function ClipsFeedScreen() {
         <FlatList
           data={clips}
           keyExtractor={(item) => `${item.jid}_${item.id}`}
-          renderItem={({ item }) => <ClipCard clip={item} />}
+          renderItem={({ item }) => (
+            <ClipCard clip={item} isActive={item.id === activeClipId} token={token} />
+          )}
           contentContainerStyle={{ padding: 16 }}
+          onViewableItemsChanged={onViewableItemsChanged}
+          viewabilityConfig={viewabilityConfig}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#FF8B33" />
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#FF8B33" colors={["#FF8B33"]} />
           }
         />
       )}

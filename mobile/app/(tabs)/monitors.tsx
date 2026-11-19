@@ -281,7 +281,7 @@ export default function MonitorsScreen() {
           renderItem={({ item }) => <CreatorItem creator={item} onToggle={handleToggle} />}
           contentContainerStyle={{ padding: 16 }}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#FF8B33" />
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#FF8B33" colors={["#FF8B33"]} />
           }
         />
       )}

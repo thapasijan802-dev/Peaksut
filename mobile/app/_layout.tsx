@@ -3,12 +3,21 @@ import React, { useEffect, useState } from "react";
 import { View, ActivityIndicator } from "react-native";
 import { Stack, useRouter, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { api } from "../src/api/client";
+import { api, setUnauthorizedHandler } from "../src/api/client";
 
 export default function RootLayout() {
   const [checkingAuth, setCheckingAuth] = useState(true);
   const router = useRouter();
   const segments = useSegments();
+
+  useEffect(() => {
+    setUnauthorizedHandler(() => {
+      router.replace("/(auth)/login");
+    });
+    return () => {
+      setUnauthorizedHandler(null);
+    };
+  }, [router]);
 
   useEffect(() => {
     let isMounted = true;

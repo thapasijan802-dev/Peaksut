@@ -1,12 +1,18 @@
 /**
  * PeakCut Mobile API Client
- * Securely manages FastAPI sessions using `expo-secure-store` and attaches authentication tokens.
+ * Hardened for FastAPI sessions, CSRF headers, and timeouts.
  */
 import * as SecureStore from "expo-secure-store";
 import { User, Creator, Job, Clip, UsageStats, ServerStatus } from "../types";
 
 const TOKEN_KEY = "peakcut_session_token";
 export const API_BASE = (process.env.EXPO_PUBLIC_API_URL || "https://peakcut.dpdns.org").replace(/\/+$/, "");
+
+let _onUnauthorized: (() => void) | null = null;
+
+export function setUnauthorizedHandler(handler: (() => void) | null): void {
+  _onUnauthorized = handler;
+}
 
 export async function getAuthToken(): Promise<string | null> {
   try {
@@ -50,6 +56,8 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
   const headers: Record<string, string> = {
     Accept: "application/json",
+    // Ensure Origin matches server PUBLIC_URL so FastAPI's _from_here CSRF check always passes
+    Origin: API_BASE,
     ...(options.headers as Record<string, string>),
   };
 
@@ -58,112 +66,173 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   }
 
   if (token) {
+    // FastAPI server Gate inspects req.cookies.get("peakcut_session")
     headers["Cookie"] = `peakcut_session=${token}`;
     headers["Authorization"] = `Bearer ${token}`;
   }
 
-  const res = await fetch(url, {
-    ...options,
-    headers,
-  });
+  // 15-second AbortController timeout to prevent hanging on flaky networks
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15000);
 
-  // Extract session token from set-cookie header if present
-  const setCookie = res.headers.get("set-cookie");
-  if (setCookie) {
-    const match = setCookie.match(/peakcut_session=([^;]+)/);
-    if (match && match[1]) {
-      await setAuthToken(match[1]);
+  try {
+    const res = await fetch(url, {
+      ...options,
+      headers,
+      signal: controller.signal,
+    });
+
+    // Check Set-Cookie header if available
+    const setCookie = res.headers.get("set-cookie");
+    if (setCookie) {
+      const match = setCookie.match(/peakcut_session=([^;]+)/);
+      if (match && match[1]) {
+        await setAuthToken(match[1]);
+      }
     }
-  }
 
-  if (res.status === 401) {
-    await clearAuthToken();
-    throw new ApiError(401, "Please sign in.");
-  }
-
-  if (!res.ok) {
-    let message = `Request failed (${res.status})`;
-    try {
-      const errJson = await res.json();
-      message = errJson.detail || errJson.message || message;
-    } catch {
-      const text = await res.text();
-      if (text) message = text.slice(0, 150);
+    if (res.status === 401) {
+      await clearAuthToken();
+      if (_onUnauthorized) {
+        _onUnauthorized();
+      }
+      throw new ApiError(401, "Please sign in.");
     }
-    throw new ApiError(res.status, message);
-  }
 
-  if (res.status === 204) {
-    return {} as T;
-  }
+    if (!res.ok) {
+      let message = `Request failed (${res.status})`;
+      try {
+        const errJson = await res.json();
+        message = errJson.detail || errJson.message || message;
+      } catch {
+        const text = await res.text();
+        if (text) message = text.slice(0, 150);
+      }
+      throw new ApiError(res.status, message);
+    }
 
-  return (await res.json()) as T;
+    if (res.status === 204) {
+      return {} as T;
+    }
+
+    return (await res.json()) as T;
+  } catch (err: any) {
+    if (err.name === "AbortError") {
+      throw new ApiError(408, "Request timed out. Please check your internet connection.");
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 export const api = {
   auth: {
     async login(email: string, password: string): Promise<{ user: User; token?: string }> {
-      const res = await fetch(`${API_BASE}/api/auth/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({ email: email.trim().toLowerCase(), password }),
-      });
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
 
-      const setCookie = res.headers.get("set-cookie");
-      let extractedToken = "";
-      if (setCookie) {
-        const match = setCookie.match(/peakcut_session=([^;]+)/);
-        if (match && match[1]) {
-          extractedToken = match[1];
-          await setAuthToken(extractedToken);
+      try {
+        const res = await fetch(`${API_BASE}/api/auth/login`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+            Origin: API_BASE,
+          },
+          body: JSON.stringify({ email: email.trim().toLowerCase(), password }),
+          signal: controller.signal,
+        });
+
+        const setCookie = res.headers.get("set-cookie");
+        let extractedToken = "";
+        if (setCookie) {
+          const match = setCookie.match(/peakcut_session=([^;]+)/);
+          if (match && match[1]) {
+            extractedToken = match[1];
+            await setAuthToken(extractedToken);
+          }
         }
-      }
 
-      if (!res.ok) {
-        let msg = "Invalid email or password";
-        try {
-          const err = await res.json();
-          msg = err.detail || msg;
-        } catch {
-          // fallback
+        if (!res.ok) {
+          let msg = "Invalid email or password";
+          try {
+            const err = await res.json();
+            msg = err.detail || msg;
+          } catch {
+            // fallback
+          }
+          throw new ApiError(res.status, msg);
         }
-        throw new ApiError(res.status, msg);
-      }
 
-      const data = await res.json();
-      return { user: data.user, token: extractedToken || data.token };
+        const data = await res.json();
+        // If server returns token in JSON body (e.g. from mobile-friendly patch) or set-cookie
+        const token = data.token || extractedToken;
+        if (token) {
+          await setAuthToken(token);
+        }
+        return { user: data.user, token };
+      } catch (err: any) {
+        if (err.name === "AbortError") {
+          throw new ApiError(408, "Login request timed out.");
+        }
+        throw err;
+      } finally {
+        clearTimeout(timeoutId);
+      }
     },
 
     async signup(email: string, password: string, name = ""): Promise<{ user: User; token?: string }> {
-      const res = await fetch(`${API_BASE}/api/auth/signup`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({ email: email.trim().toLowerCase(), password, name: name.trim() }),
-      });
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
 
-      const setCookie = res.headers.get("set-cookie");
-      let extractedToken = "";
-      if (setCookie) {
-        const match = setCookie.match(/peakcut_session=([^;]+)/);
-        if (match && match[1]) {
-          extractedToken = match[1];
-          await setAuthToken(extractedToken);
+      try {
+        const res = await fetch(`${API_BASE}/api/auth/signup`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+            Origin: API_BASE,
+          },
+          body: JSON.stringify({ email: email.trim().toLowerCase(), password, name: name.trim() }),
+          signal: controller.signal,
+        });
+
+        const setCookie = res.headers.get("set-cookie");
+        let extractedToken = "";
+        if (setCookie) {
+          const match = setCookie.match(/peakcut_session=([^;]+)/);
+          if (match && match[1]) {
+            extractedToken = match[1];
+            await setAuthToken(extractedToken);
+          }
         }
-      }
 
-      if (!res.ok) {
-        let msg = "Failed to sign up";
-        try {
-          const err = await res.json();
-          msg = err.detail || msg;
-        } catch {
-          // fallback
+        if (!res.ok) {
+          let msg = "Failed to sign up";
+          try {
+            const err = await res.json();
+            msg = err.detail || msg;
+          } catch {
+            // fallback
+          }
+          throw new ApiError(res.status, msg);
         }
-        throw new ApiError(res.status, msg);
-      }
 
-      const data = await res.json();
-      return { user: data.user, token: extractedToken || data.token };
+        const data = await res.json();
+        const token = data.token || extractedToken;
+        if (token) {
+          await setAuthToken(token);
+        }
+        return { user: data.user, token };
+      } catch (err: any) {
+        if (err.name === "AbortError") {
+          throw new ApiError(408, "Signup request timed out.");
+        }
+        throw err;
+      } finally {
+        clearTimeout(timeoutId);
+      }
     },
 
     async getMe(): Promise<User | null> {
@@ -179,7 +248,7 @@ export const api = {
       try {
         await request("/api/auth/logout", { method: "POST" });
       } catch {
-        // ignore network error on logout
+        // ignore network errors during sign out
       } finally {
         await clearAuthToken();
       }
@@ -239,7 +308,6 @@ export const api = {
         }
       }
 
-      // Sort by score or recency descending
       return allClips.sort((a, b) => (b.score || 0) - (a.score || 0));
     },
 
