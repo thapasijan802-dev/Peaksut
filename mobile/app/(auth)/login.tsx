@@ -14,6 +14,7 @@ import { useRouter } from "expo-router";
 import * as Haptics from "expo-haptics";
 import { Ionicons } from "@expo/vector-icons";
 import { api, API_BASE } from "../../src/api/client";
+import { PeakCutLogo } from "../../src/components/PeakCutLogo";
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -63,26 +64,11 @@ export default function LoginScreen() {
           keyboardShouldPersistTaps="handled"
         >
           {/* Header */}
-          <View style={{ alignItems: "center", marginBottom: 36 }}>
-            <View
-              style={{
-                width: 64,
-                height: 64,
-                borderRadius: 20,
-                backgroundColor: "#2C221D",
-                borderWidth: 1,
-                borderColor: "rgba(255, 255, 255, 0.12)",
-                justifyContent: "center",
-                alignItems: "center",
-                marginBottom: 16,
-              }}
-            >
-              <Ionicons name="cut" size={32} color="#FF8B33" />
+          <View style={{ alignItems: "center", marginBottom: 32 }}>
+            <View style={{ marginBottom: 12 }}>
+              <PeakCutLogo size={54} showText={true} />
             </View>
-            <Text style={{ fontSize: 28, fontWeight: "700", color: "#F4EEEA", letterSpacing: -0.5 }}>
-              Peak<Text style={{ color: "#FF8B33" }}>Cut</Text>
-            </Text>
-            <Text style={{ fontSize: 14, color: "#A99A91", marginTop: 6 }}>
+            <Text style={{ fontSize: 13, color: "#A99A91", marginTop: 2 }}>
               AI Live Stream Clipper & Viral Shorts
             </Text>
             <View

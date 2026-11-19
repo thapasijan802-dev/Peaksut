@@ -28,6 +28,11 @@ export interface CreatorProfile {
   title?: string;
   game?: string;
   at?: number;
+  viewers?: number;
+  platform?: string;
+  channel?: string;
+  embed?: string;
+  pic?: string;
 }
 
 export interface Creator {
@@ -37,11 +42,20 @@ export interface Creator {
   channels?: Record<string, string>;
   auto_watch?: boolean;
   auto_post?: boolean;
+  autopost?: boolean;
   live_job?: string | null;
   log?: string[];
   profile?: CreatorProfile;
   profiles?: Record<string, CreatorProfile>;
   created_at?: number;
+  style?: string;
+  layout?: string;
+  min_score?: number;
+  min_len?: number;
+  max_len?: number;
+  max_clips?: number;
+  ai_only_on_spike?: boolean;
+  plan?: string;
 }
 
 export interface ClipWord {
@@ -53,11 +67,12 @@ export interface ClipWord {
 
 export interface Clip {
   id: string;
-  jid: string;
+  jid?: string;
+  job_id?: string;
   title: string;
-  hook: string;
+  hook?: string;
   score: number;
-  layout: string;
+  layout?: string;
   start: number;
   end: number;
   duration?: number;
@@ -67,6 +82,7 @@ export interface Clip {
   status?: string;
   created_at?: number;
   creator_name?: string;
+  creatorName?: string;
 }
 
 export interface JobSource {
@@ -92,6 +108,8 @@ export interface Job {
   source?: JobSource;
   clips: Clip[];
   ai?: JobAI;
+  creator?: string;
+  uploader?: string;
 }
 
 export interface BillingPlan {

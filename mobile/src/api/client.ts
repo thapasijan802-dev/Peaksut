@@ -244,6 +244,29 @@ export const api = {
     async toggleAutoWatch(cid: string, autoWatch: boolean): Promise<Creator> {
       return await this.update(cid, { auto_watch: autoWatch });
     },
+
+    async toggleLive(cid: string, action: "start" | "stop", liveJobId?: string | null): Promise<any> {
+      if (action === "stop") {
+        let jid = liveJobId;
+        if (!jid) {
+          try {
+            const all = await api.creators.list();
+            const found = all.find((c) => c.id === cid);
+            jid = found?.live_job || null;
+          } catch {
+            // fallback
+          }
+        }
+        if (jid) {
+          return await request(`/api/live/${encodeURIComponent(jid)}/stop`, { method: "POST" });
+        }
+        return { ok: true };
+      }
+      return await request(`/api/creators/${encodeURIComponent(cid)}/live`, {
+        method: "POST",
+        body: JSON.stringify({}),
+      });
+    },
   },
 
   jobs: {
@@ -254,6 +277,30 @@ export const api = {
     async get(jid: string): Promise<Job> {
       return await request<Job>(`/api/jobs/${encodeURIComponent(jid)}`);
     },
+
+    async create(url: string, options: Record<string, any> = {}, creator?: string): Promise<Job> {
+      return await request<Job>("/api/jobs", {
+        method: "POST",
+        body: JSON.stringify({ url, options, creator }),
+      });
+    },
+  },
+
+  // Convenience top-level methods matching dashboard patterns
+  getCreators(): Promise<Creator[]> {
+    return this.creators.list();
+  },
+
+  getJobs(): Promise<Job[]> {
+    return this.jobs.list();
+  },
+
+  getOverview(): Promise<any> {
+    return request<any>("/api/overview");
+  },
+
+  createJob(url: string, options: Record<string, any> = {}, creator?: string): Promise<Job> {
+    return this.jobs.create(url, options, creator);
   },
 
   clips: {

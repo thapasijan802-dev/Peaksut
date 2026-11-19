@@ -14,6 +14,7 @@ import * as Haptics from "expo-haptics";
 import { Ionicons } from "@expo/vector-icons";
 import { api, API_BASE } from "../../src/api/client";
 import { User, UsageStats } from "../../src/types";
+import { PeakCutLogo } from "../../src/components/PeakCutLogo";
 
 export default function AccountScreen() {
   const router = useRouter();
@@ -77,14 +78,26 @@ export default function AccountScreen() {
       {/* Top Navbar */}
       <View
         style={{
-          paddingHorizontal: 20,
-          paddingVertical: 14,
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+          paddingHorizontal: 16,
+          paddingVertical: 12,
           borderBottomWidth: 1,
           borderBottomColor: "rgba(255, 255, 255, 0.08)",
         }}
       >
-        <Text style={{ fontSize: 22, fontWeight: "700", color: "#F4EEEA" }}>Account</Text>
-        <Text style={{ fontSize: 12, color: "#A99A91" }}>Profile & Server Usage</Text>
+        <PeakCutLogo size={30} showText={true} />
+        <View
+          style={{
+            backgroundColor: "rgba(255, 255, 255, 0.06)",
+            paddingHorizontal: 10,
+            paddingVertical: 4,
+            borderRadius: 999,
+          }}
+        >
+          <Text style={{ color: "#A99A91", fontSize: 12, fontWeight: "600" }}>Account</Text>
+        </View>
       </View>
 
       {loading ? (

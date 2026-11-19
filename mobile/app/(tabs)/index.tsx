@@ -1,457 +1,547 @@
-import React, { useEffect, useState, useCallback, useRef } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import {
   View,
   Text,
-  FlatList,
+  ScrollView,
+  TextInput,
   TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
   Alert,
   SafeAreaView,
+  StyleSheet,
 } from "react-native";
-import { useVideoPlayer, VideoView } from "expo-video";
-import * as FileSystem from "expo-file-system/legacy";
-import * as MediaLibrary from "expo-media-library/legacy";
-import * as Sharing from "expo-sharing";
-import * as Haptics from "expo-haptics";
+import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { api, getAuthToken, API_BASE } from "../../src/api/client";
-import { Clip } from "../../src/types";
+import * as Haptics from "expo-haptics";
+import { api, API_BASE } from "../../src/api/client";
+import { Creator, Job } from "../../src/types";
+import { PeakCutLogo } from "../../src/components/PeakCutLogo";
 
-interface ClipCardProps {
-  clip: Clip;
-  isActive: boolean;
-  token: string | null;
-}
-
-function ClipCard({ clip, isActive, token }: ClipCardProps) {
-  const [downloading, setDownloading] = useState(false);
-  const [sharing, setSharing] = useState(false);
-
-  // Setup video source with standard Bearer Authorization headers
-  const videoSource = token
-    ? {
-        uri: clip.video_url,
-        headers: {
-          Authorization: `Bearer ${token}`,
-          Origin: API_BASE,
-        },
-      }
-    : clip.video_url;
-
-  const player = useVideoPlayer(videoSource, (p) => {
-    p.loop = true;
-    p.muted = true;
-  });
-
-  // Autoplay visible video, pause off-screen videos to save memory and audio overlap
-  useEffect(() => {
-    try {
-      if (isActive) {
-        player.play();
-      } else {
-        player.pause();
-      }
-    } catch {
-      // player state safeguard
-    }
-  }, [isActive, player]);
-
-  const handleDownloadToGallery = async () => {
-    try {
-      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      setDownloading(true);
-
-      // Request media library permission for video
-      const { status } = await MediaLibrary.requestPermissionsAsync(true, ["video"]);
-      if (status !== "granted") {
-        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-        Alert.alert(
-          "Gallery Permission Required",
-          "Please grant media permission so PeakCut can save generated clips directly to your Android device gallery."
-        );
-        return;
-      }
-
-      const authToken = await getAuthToken();
-      const sanitizedId = clip.id.replace(/[^a-zA-Z0-9_-]/g, "");
-      const tempUri = `${FileSystem.cacheDirectory}clip_${sanitizedId}.mp4`;
-
-      // Download file to cache
-      const downloadRes = await FileSystem.downloadAsync(clip.video_url, tempUri, {
-        headers: authToken
-          ? {
-              Authorization: `Bearer ${authToken}`,
-              Origin: API_BASE,
-            }
-          : { Origin: API_BASE },
-      });
-
-      // Save directly to device gallery
-      try {
-        await MediaLibrary.saveToLibraryAsync(downloadRes.uri);
-      } catch {
-        await MediaLibrary.createAssetAsync(downloadRes.uri);
-      }
-
-      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      Alert.alert("Saved to Gallery! 🎬", `"${clip.title || "Clip"}" has been saved to your Photos.`);
-    } catch (err: any) {
-      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      Alert.alert("Download Error", err.message || "Failed to download clip to gallery.");
-    } finally {
-      // Clean up temporary cache file so phone storage is preserved
-      const sanitizedId = clip.id.replace(/[^a-zA-Z0-9_-]/g, "");
-      const tempUri = `${FileSystem.cacheDirectory}clip_${sanitizedId}.mp4`;
-      FileSystem.deleteAsync(tempUri, { idempotent: true }).catch(() => {});
-      setDownloading(false);
-    }
-  };
-
-  const handleShare = async () => {
-    const sanitizedId = clip.id.replace(/[^a-zA-Z0-9_-]/g, "");
-    const tempUri = `${FileSystem.cacheDirectory}share_${sanitizedId}.mp4`;
-
-    try {
-      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      setSharing(true);
-
-      if (!(await Sharing.isAvailableAsync())) {
-        Alert.alert("Sharing Unavailable", "Native sharing is not supported on this device.");
-        return;
-      }
-
-      const authToken = await getAuthToken();
-      const fileInfo = await FileSystem.getInfoAsync(tempUri);
-      let targetUri = tempUri;
-
-      if (!fileInfo.exists) {
-        const downloadRes = await FileSystem.downloadAsync(clip.video_url, tempUri, {
-          headers: authToken
-            ? {
-                Authorization: `Bearer ${authToken}`,
-                Origin: API_BASE,
-              }
-            : { Origin: API_BASE },
-        });
-        targetUri = downloadRes.uri;
-      }
-
-      await Sharing.shareAsync(targetUri, {
-        mimeType: "video/mp4",
-        dialogTitle: clip.title || "Share PeakCut Viral Clip",
-      });
-      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    } catch (err: any) {
-      Alert.alert("Share Error", err.message || "Could not share clip.");
-    } finally {
-      FileSystem.deleteAsync(tempUri, { idempotent: true }).catch(() => {});
-      setSharing(false);
-    }
-  };
-
-  const score = Math.round(clip.score || 75);
-  const isHighViral = score >= 85;
-
-  return (
-    <View
-      style={{
-        backgroundColor: "#2C221D",
-        borderRadius: 20,
-        marginBottom: 20,
-        overflow: "hidden",
-        borderWidth: 1,
-        borderColor: "rgba(255, 255, 255, 0.08)",
-      }}
-    >
-      {/* Video View */}
-      <View style={{ width: "100%", height: 380, backgroundColor: "#140E0B", position: "relative" }}>
-        <VideoView
-          player={player}
-          style={{ width: "100%", height: "100%" }}
-          contentFit="cover"
-          nativeControls
-        />
-
-        {/* Viral Score Badge */}
-        <View
-          style={{
-            position: "absolute",
-            top: 14,
-            left: 14,
-            flexDirection: "row",
-            alignItems: "center",
-            paddingHorizontal: 10,
-            paddingVertical: 5,
-            borderRadius: 12,
-            backgroundColor: isHighViral ? "rgba(229, 50, 63, 0.9)" : "rgba(255, 139, 51, 0.9)",
-          }}
-        >
-          <Text style={{ fontSize: 13, marginRight: 4 }}>{isHighViral ? "🔥" : "⚡"}</Text>
-          <Text style={{ color: "#FFFFFF", fontWeight: "700", fontSize: 12 }}>
-            Score {score}
-          </Text>
-        </View>
-
-        {/* Layout Badge */}
-        <View
-          style={{
-            position: "absolute",
-            top: 14,
-            right: 14,
-            paddingHorizontal: 8,
-            paddingVertical: 4,
-            borderRadius: 8,
-            backgroundColor: "rgba(30, 22, 18, 0.8)",
-            borderWidth: 1,
-            borderColor: "rgba(255, 255, 255, 0.1)",
-          }}
-        >
-          <Text style={{ color: "#A99A91", fontSize: 11, fontWeight: "600", textTransform: "capitalize" }}>
-            {clip.layout || "9:16"}
-          </Text>
-        </View>
-
-        {/* Hook Text Overlay Preview */}
-        {clip.hook ? (
-          <View
-            style={{
-              position: "absolute",
-              bottom: 14,
-              left: 14,
-              right: 14,
-              backgroundColor: "rgba(0, 0, 0, 0.65)",
-              paddingHorizontal: 12,
-              paddingVertical: 6,
-              borderRadius: 8,
-            }}
-          >
-            <Text
-              numberOfLines={2}
-              style={{ color: "#FFFFFF", fontSize: 13, fontWeight: "700", textAlign: "center" }}
-            >
-              "{clip.hook}"
-            </Text>
-          </View>
-        ) : null}
-      </View>
-
-      {/* Info & Actions */}
-      <View style={{ padding: 16 }}>
-        <Text
-          numberOfLines={2}
-          style={{ fontSize: 16, fontWeight: "700", color: "#F4EEEA", lineHeight: 22, marginBottom: 4 }}
-        >
-          {clip.title || "Viral Stream Moment"}
-        </Text>
-
-        <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 16 }}>
-          <Ionicons name="person-circle-outline" size={16} color="#A99A91" style={{ marginRight: 4 }} />
-          <Text style={{ color: "#A99A91", fontSize: 13, fontWeight: "500", marginRight: 12 }}>
-            {clip.creator_name || "Streamer"}
-          </Text>
-          {clip.duration ? (
-            <View style={{ flexDirection: "row", alignItems: "center" }}>
-              <Ionicons name="time-outline" size={14} color="#6D6159" style={{ marginRight: 3 }} />
-              <Text style={{ color: "#6D6159", fontSize: 12 }}>{Math.round(clip.duration)}s</Text>
-            </View>
-          ) : null}
-        </View>
-
-        {/* Action Buttons */}
-        <View style={{ flexDirection: "row", gap: 10 }}>
-          <TouchableOpacity
-            onPress={handleDownloadToGallery}
-            disabled={downloading}
-            activeOpacity={0.8}
-            style={{
-              flex: 1,
-              flexDirection: "row",
-              alignItems: "center",
-              justifyContent: "center",
-              backgroundColor: "#FF8B33",
-              borderRadius: 12,
-              paddingVertical: 12,
-              opacity: downloading ? 0.7 : 1,
-            }}
-          >
-            {downloading ? (
-              <ActivityIndicator size="small" color="#1E1612" />
-            ) : (
-              <>
-                <Ionicons name="images-outline" size={18} color="#1E1612" style={{ marginRight: 6 }} />
-                <Text style={{ color: "#1E1612", fontWeight: "700", fontSize: 14 }}>Save to Gallery</Text>
-              </>
-            )}
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            onPress={handleShare}
-            disabled={sharing}
-            activeOpacity={0.8}
-            style={{
-              flex: 1,
-              flexDirection: "row",
-              alignItems: "center",
-              justifyContent: "center",
-              backgroundColor: "#1E1612",
-              borderRadius: 12,
-              paddingVertical: 12,
-              borderWidth: 1,
-              borderColor: "rgba(255, 255, 255, 0.12)",
-              opacity: sharing ? 0.7 : 1,
-            }}
-          >
-            {sharing ? (
-              <ActivityIndicator size="small" color="#FF8B33" />
-            ) : (
-              <>
-                <Ionicons name="share-social-outline" size={18} color="#FF8B33" style={{ marginRight: 6 }} />
-                <Text style={{ color: "#F4EEEA", fontWeight: "600", fontSize: 14 }}>Share</Text>
-              </>
-            )}
-          </TouchableOpacity>
-        </View>
-      </View>
-    </View>
-  );
-}
-
-export default function ClipsFeedScreen() {
-  const [clips, setClips] = useState<Clip[]>([]);
-  const [token, setToken] = useState<string | null>(null);
-  const [activeClipId, setActiveClipId] = useState<string | null>(null);
+export default function HomeScreen() {
+  const router = useRouter();
+  const [url, setUrl] = useState("");
+  const [layout, setLayout] = useState<"blur" | "zoom" | "center">("blur");
+  const [style, setStyle] = useState<"bounce" | "clean" | "hype">("bounce");
+  const [submitting, setSubmitting] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
-  const loadClips = useCallback(async () => {
+  const [creators, setCreators] = useState<Creator[]>([]);
+  const [jobs, setJobs] = useState<Job[]>([]);
+  const [overview, setOverview] = useState<any>(null);
+
+  const loadData = useCallback(async () => {
     try {
-      setError(null);
-      const [data, authToken] = await Promise.all([api.clips.getRecent(), getAuthToken()]);
-      setClips(data);
-      setToken(authToken);
-      if (data.length > 0 && !activeClipId) {
-        setActiveClipId(data[0].id);
-      }
+      const [cRes, jRes, oRes] = await Promise.allSettled([
+        api.getCreators(),
+        api.getJobs(),
+        api.getOverview(),
+      ]);
+
+      if (cRes.status === "fulfilled") setCreators(cRes.value || []);
+      if (jRes.status === "fulfilled") setJobs(jRes.value || []);
+      if (oRes.status === "fulfilled") setOverview(oRes.value || {});
     } catch (err: any) {
-      setError(err.message || "Failed to load clips from server.");
+      console.warn("Home data load error:", err.message);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [activeClipId]);
+  }, []);
 
   useEffect(() => {
-    loadClips();
-  }, [loadClips]);
+    loadData();
+  }, [loadData]);
 
   const onRefresh = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setRefreshing(true);
-    loadClips();
-  }, [loadClips]);
+    loadData();
+  }, [loadData]);
 
-  // Pause off-screen videos as the user scrolls through the vertical feed
-  const onViewableItemsChanged = useRef((info: { viewableItems: any[] }) => {
-    if (info.viewableItems.length > 0 && info.viewableItems[0].item) {
-      setActiveClipId(info.viewableItems[0].item.id);
+  const handleSubmitUrl = async () => {
+    const trimmed = url.trim();
+    if (!trimmed) {
+      Alert.alert("Link Required", "Please paste a YouTube, Twitch, or Kick link.");
+      return;
     }
-  }).current;
 
-  const viewabilityConfig = useRef({
-    itemVisiblePercentThreshold: 60,
-  }).current;
+    try {
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      setSubmitting(true);
+      await api.createJob(trimmed, {
+        layout,
+        style,
+        min_len: 20,
+        max_len: 60,
+      });
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      Alert.alert(
+        "Job Started! 🎬",
+        "PeakCut has started analyzing your video. High-scoring viral moments will appear in Clips shortly."
+      );
+      setUrl("");
+      loadData();
+    } catch (err: any) {
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert("Error Creating Job", err.message || "Could not process link.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // Calculations
+  const liveCount = creators.filter((c) => c.live_job || c.profile?.live).length;
+  const totalClips = jobs.reduce((acc, j) => acc + (j.clips?.length || 0), 0);
+  const postedCount = overview?.posted_today || 0;
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: "#1E1612" }}>
-      {/* Top Navbar */}
-      <View
-        style={{
-          flexDirection: "row",
-          alignItems: "center",
-          justifyContent: "space-between",
-          paddingHorizontal: 20,
-          paddingVertical: 14,
-          borderBottomWidth: 1,
-          borderBottomColor: "rgba(255, 255, 255, 0.08)",
-        }}
-      >
-        <View>
-          <Text style={{ fontSize: 22, fontWeight: "700", color: "#F4EEEA" }}>
-            Peak<Text style={{ color: "#FF8B33" }}>Cut</Text>
-          </Text>
-          <Text style={{ fontSize: 12, color: "#A99A91" }}>AI Viral Clips Feed</Text>
+    <SafeAreaView style={styles.safeArea}>
+      {/* Top Header */}
+      <View style={styles.topbar}>
+        <PeakCutLogo size={32} showText={true} />
+        <View style={styles.proBadge}>
+          <Text style={styles.proText}>PRO</Text>
         </View>
-        <TouchableOpacity
-          onPress={onRefresh}
-          activeOpacity={0.7}
-          style={{
-            width: 38,
-            height: 38,
-            borderRadius: 12,
-            backgroundColor: "#2C221D",
-            justifyContent: "center",
-            alignItems: "center",
-            borderWidth: 1,
-            borderColor: "rgba(255, 255, 255, 0.08)",
-          }}
-        >
-          <Ionicons name="refresh" size={18} color="#FF8B33" />
-        </TouchableOpacity>
       </View>
 
-      {/* Main Content */}
-      {loading ? (
-        <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
-          <ActivityIndicator size="large" color="#FF8B33" />
-          <Text style={{ color: "#A99A91", marginTop: 12, fontSize: 14 }}>Loading viral clips...</Text>
-        </View>
-      ) : error ? (
-        <View style={{ flex: 1, justifyContent: "center", alignItems: "center", padding: 32 }}>
-          <Ionicons name="cloud-offline-outline" size={48} color="#D3343F" style={{ marginBottom: 12 }} />
-          <Text style={{ color: "#F4EEEA", fontSize: 16, fontWeight: "600", textAlign: "center" }}>
-            {error}
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#FF8B33" colors={["#FF8B33"]} />
+        }
+      >
+        {/* Hero Card */}
+        <View style={styles.heroCard}>
+          <Text style={styles.heroTitle}>What do you want to clip today?</Text>
+          <Text style={styles.heroSubtitle}>
+            Paste a link or drop in videos. You get captioned shorts back with AI viral scores.
           </Text>
+
+          {/* Input Box */}
+          <View style={styles.inputContainer}>
+            <Ionicons name="link-outline" size={18} color="#FF8B33" style={{ marginRight: 8 }} />
+            <TextInput
+              style={styles.input}
+              placeholder="Paste YouTube, Twitch or Kick link..."
+              placeholderTextColor="#A99A91"
+              value={url}
+              onChangeText={setUrl}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            {url.length > 0 && (
+              <TouchableOpacity onPress={() => setUrl("")}>
+                <Ionicons name="close-circle" size={18} color="#A99A91" />
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* Options Row */}
+          <View style={styles.optionsRow}>
+            {/* Layout selector */}
+            <View style={styles.optionGroup}>
+              <Text style={styles.groupLabel}>Layout:</Text>
+              {(["blur", "zoom", "center"] as const).map((l) => (
+                <TouchableOpacity
+                  key={l}
+                  onPress={() => setLayout(l)}
+                  style={[styles.pill, layout === l && styles.pillActive]}
+                >
+                  <Text style={[styles.pillText, layout === l && styles.pillTextActive]}>
+                    {l.charAt(0).toUpperCase() + l.slice(1)}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {/* Style selector */}
+            <View style={styles.optionGroup}>
+              <Text style={styles.groupLabel}>Style:</Text>
+              {(["bounce", "clean", "hype"] as const).map((s) => (
+                <TouchableOpacity
+                  key={s}
+                  onPress={() => setStyle(s)}
+                  style={[styles.pill, style === s && styles.pillActive]}
+                >
+                  <Text style={[styles.pillText, style === s && styles.pillTextActive]}>
+                    {s.charAt(0).toUpperCase() + s.slice(1)}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+
+          {/* Submit Button */}
           <TouchableOpacity
-            onPress={loadClips}
-            style={{
-              marginTop: 18,
-              backgroundColor: "#FF8B33",
-              paddingHorizontal: 20,
-              paddingVertical: 10,
-              borderRadius: 12,
-            }}
+            style={styles.submitBtn}
+            onPress={handleSubmitUrl}
+            disabled={submitting}
+            activeOpacity={0.8}
           >
-            <Text style={{ color: "#1E1612", fontWeight: "700" }}>Try Again</Text>
+            {submitting ? (
+              <ActivityIndicator color="#2A1A12" size="small" />
+            ) : (
+              <>
+                <Ionicons name="cut" size={18} color="#2A1A12" style={{ marginRight: 6 }} />
+                <Text style={styles.submitBtnText}>Get Clips</Text>
+              </>
+            )}
           </TouchableOpacity>
         </View>
-      ) : clips.length === 0 ? (
-        <View style={{ flex: 1, justifyContent: "center", alignItems: "center", padding: 32 }}>
-          <Ionicons name="film-outline" size={54} color="#6D6159" style={{ marginBottom: 14 }} />
-          <Text style={{ color: "#F4EEEA", fontSize: 18, fontWeight: "700", marginBottom: 6 }}>
-            No clips rendered yet
-          </Text>
-          <Text style={{ color: "#A99A91", fontSize: 13, textAlign: "center", lineHeight: 20 }}>
-            When monitored creators go live or recordings complete, AI hooks and split-screen clips will
-            appear here.
-          </Text>
+
+        {/* Day at a Glance Stats */}
+        <Text style={styles.sectionHeader}>Today at a Glance</Text>
+        <View style={styles.statsGrid}>
+          <View style={styles.statTile}>
+            <View style={styles.statIconRow}>
+              <View style={[styles.pulseDot, liveCount > 0 && styles.pulseDotLive]} />
+              <Text style={styles.statLabel}>Recording</Text>
+            </View>
+            <Text style={styles.statValue}>{liveCount}</Text>
+            <Text style={styles.statSub}>{liveCount > 0 ? "Streamers Live" : "Idle"}</Text>
+          </View>
+
+          <View style={styles.statTile}>
+            <View style={styles.statIconRow}>
+              <Ionicons name="film" size={16} color="#FF8B33" style={{ marginRight: 4 }} />
+              <Text style={styles.statLabel}>Clips Made</Text>
+            </View>
+            <Text style={styles.statValue}>{totalClips}</Text>
+            <Text style={styles.statSub}>Min 20s length</Text>
+          </View>
+
+          <View style={styles.statTile}>
+            <View style={styles.statIconRow}>
+              <Ionicons name="paper-plane" size={16} color="#3DDC97" style={{ marginRight: 4 }} />
+              <Text style={styles.statLabel}>Posted</Text>
+            </View>
+            <Text style={styles.statValue}>{postedCount}</Text>
+            <Text style={styles.statSub}>To socials</Text>
+          </View>
+
+          <View style={styles.statTile}>
+            <View style={styles.statIconRow}>
+              <Ionicons name="hardware-chip" size={16} color="#FF8B33" style={{ marginRight: 4 }} />
+              <Text style={styles.statLabel}>AI Engine</Text>
+            </View>
+            <Text style={styles.statValue}>8x</Text>
+            <Text style={styles.statSub}>Gemini pool</Text>
+          </View>
         </View>
-      ) : (
-        <FlatList
-          data={clips}
-          keyExtractor={(item) => `${item.jid}_${item.id}`}
-          renderItem={({ item }) => (
-            <ClipCard clip={item} isActive={item.id === activeClipId} token={token} />
-          )}
-          contentContainerStyle={{ padding: 16 }}
-          onViewableItemsChanged={onViewableItemsChanged}
-          viewabilityConfig={viewabilityConfig}
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#FF8B33" colors={["#FF8B33"]} />
-          }
-        />
-      )}
+
+        {/* Live Streamers Section */}
+        <View style={styles.sectionTitleRow}>
+          <Text style={styles.sectionHeader}>Live Streamers Monitored</Text>
+          <TouchableOpacity onPress={() => router.push("/(tabs)/monitors")}>
+            <Text style={styles.viewAllText}>View All ({creators.length})</Text>
+          </TouchableOpacity>
+        </View>
+
+        {loading ? (
+          <ActivityIndicator color="#FF8B33" style={{ marginVertical: 20 }} />
+        ) : creators.length === 0 ? (
+          <View style={styles.emptyCard}>
+            <Text style={styles.emptyText}>No creators tracked yet.</Text>
+          </View>
+        ) : (
+          <View style={styles.creatorsList}>
+            {creators.slice(0, 6).map((c) => {
+              const isLive = Boolean(c.live_job || c.profile?.live);
+              return (
+                <TouchableOpacity
+                  key={c.id}
+                  style={styles.creatorCard}
+                  onPress={() => router.push("/(tabs)/monitors")}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.creatorLeft}>
+                    <View style={styles.avatar}>
+                      <Text style={styles.avatarText}>{c.name.slice(0, 2).toUpperCase()}</Text>
+                      {isLive && <View style={styles.avatarLiveDot} />}
+                    </View>
+                    <View style={{ marginLeft: 12 }}>
+                      <Text style={styles.creatorName}>{c.name}</Text>
+                      <Text style={styles.creatorChannel}>
+                        {isLive
+                          ? `🔴 Live (${c.profile?.viewers?.toLocaleString() || "active"} viewers)`
+                          : c.channel
+                          ? c.channel.replace(/^https?:\/\/(www\.)?/, "")
+                          : "Offline"}
+                      </Text>
+                    </View>
+                  </View>
+
+                  {isLive ? (
+                    <View style={styles.recBadge}>
+                      <Text style={styles.recText}>REC</Text>
+                    </View>
+                  ) : (
+                    <Ionicons name="chevron-forward" size={18} color="#A99A91" />
+                  )}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        )}
+      </ScrollView>
     </SafeAreaView>
   );
 }
+
+const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: "#1E1612",
+  },
+  topbar: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255, 255, 255, 0.08)",
+  },
+  proBadge: {
+    backgroundColor: "rgba(255, 139, 51, 0.16)",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#FF8B33",
+  },
+  proText: {
+    color: "#FF8B33",
+    fontSize: 11,
+    fontWeight: "800",
+  },
+  scrollContent: {
+    padding: 16,
+    paddingBottom: 40,
+  },
+  heroCard: {
+    backgroundColor: "#2C221D",
+    borderRadius: 16,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.06)",
+    marginBottom: 20,
+  },
+  heroTitle: {
+    color: "#F4EEEA",
+    fontSize: 20,
+    fontWeight: "700",
+    letterSpacing: -0.3,
+    marginBottom: 4,
+  },
+  heroSubtitle: {
+    color: "#A99A91",
+    fontSize: 13,
+    lineHeight: 18,
+    marginBottom: 16,
+  },
+  inputContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#1E1612",
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.12)",
+    paddingHorizontal: 12,
+    height: 44,
+    marginBottom: 12,
+  },
+  input: {
+    flex: 1,
+    color: "#F4EEEA",
+    fontSize: 13,
+  },
+  optionsRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 14,
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  optionGroup: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  groupLabel: {
+    color: "#A99A91",
+    fontSize: 12,
+    marginRight: 2,
+  },
+  pill: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    backgroundColor: "#1E1612",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+  },
+  pillActive: {
+    backgroundColor: "rgba(255, 139, 51, 0.2)",
+    borderColor: "#FF8B33",
+  },
+  pillText: {
+    color: "#A99A91",
+    fontSize: 11,
+    fontWeight: "600",
+  },
+  pillTextActive: {
+    color: "#FF8B33",
+  },
+  submitBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#FF8B33",
+    borderRadius: 10,
+    height: 42,
+  },
+  submitBtnText: {
+    color: "#2A1A12",
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  sectionTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 10,
+    marginTop: 8,
+  },
+  sectionHeader: {
+    color: "#F4EEEA",
+    fontSize: 15,
+    fontWeight: "700",
+    marginBottom: 10,
+  },
+  viewAllText: {
+    color: "#FF8B33",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  statsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+    marginBottom: 20,
+  },
+  statTile: {
+    flex: 1,
+    minWidth: "46%",
+    backgroundColor: "#2C221D",
+    borderRadius: 12,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.06)",
+  },
+  statIconRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 6,
+  },
+  statLabel: {
+    color: "#A99A91",
+    fontSize: 12,
+    fontWeight: "500",
+  },
+  statValue: {
+    color: "#F4EEEA",
+    fontSize: 22,
+    fontWeight: "800",
+  },
+  statSub: {
+    color: "#6D6159",
+    fontSize: 11,
+    marginTop: 2,
+  },
+  pulseDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#6D6159",
+    marginRight: 6,
+  },
+  pulseDotLive: {
+    backgroundColor: "#E5323F",
+  },
+  creatorsList: {
+    backgroundColor: "#2C221D",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.06)",
+    overflow: "hidden",
+  },
+  creatorCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255, 255, 255, 0.04)",
+  },
+  creatorLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+  },
+  avatar: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: "rgba(255, 139, 51, 0.18)",
+    alignItems: "center",
+    justifyContent: "center",
+    position: "relative",
+  },
+  avatarText: {
+    color: "#FF8B33",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  avatarLiveDot: {
+    position: "absolute",
+    bottom: 0,
+    right: 0,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: "#E5323F",
+    borderWidth: 2,
+    borderColor: "#2C221D",
+  },
+  creatorName: {
+    color: "#F4EEEA",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  creatorChannel: {
+    color: "#A99A91",
+    fontSize: 11,
+    marginTop: 2,
+  },
+  recBadge: {
+    backgroundColor: "#E5323F",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 4,
+  },
+  recText: {
+    color: "#FFFFFF",
+    fontSize: 10,
+    fontWeight: "800",
+  },
+  emptyCard: {
+    padding: 20,
+    alignItems: "center",
+  },
+  emptyText: {
+    color: "#A99A91",
+    fontSize: 13,
+  },
+});

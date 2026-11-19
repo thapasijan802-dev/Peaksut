@@ -10,7 +10,7 @@ export default function TabLayout() {
         tabBarStyle: {
           backgroundColor: "#1E1612",
           borderTopColor: "rgba(255, 255, 255, 0.08)",
-          height: 60,
+          height: 62,
           paddingBottom: 8,
           paddingTop: 8,
         },
@@ -25,18 +25,27 @@ export default function TabLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: "Clips",
+          title: "Home",
           tabBarIcon: ({ color, focused }) => (
-            <Ionicons name={focused ? "videocam" : "videocam-outline"} size={22} color={color as any} />
+            <Ionicons name={focused ? "home" : "home-outline"} size={22} color={color as any} />
           ),
         }}
       />
       <Tabs.Screen
         name="monitors"
         options={{
-          title: "Monitors",
+          title: "Creators",
           tabBarIcon: ({ color, focused }) => (
             <Ionicons name={focused ? "radio" : "radio-outline"} size={22} color={color as any} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="clips"
+        options={{
+          title: "Clips",
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons name={focused ? "film" : "film-outline"} size={22} color={color as any} />
           ),
         }}
       />
