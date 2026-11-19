@@ -92,19 +92,60 @@ def keys() -> list:
     return [k.strip() for k in raw.split(",") if k.strip()]
 
 
-_key_idx = 0
+# key string -> {"status": "ok"|"exhausted"|"expired"|"temp_error", "until": timestamp, "fails": int}
+_key_status: dict = {}
 _key_lock = threading.Lock()
 
 
-def rotated_keys() -> list:
-    global _key_idx
+def mark_key_success(k: str):
+    with _key_lock:
+        if k in _key_status and _key_status[k].get("status") != "ok":
+            _key_status[k] = {"status": "ok", "until": 0.0, "fails": 0}
+
+
+def mark_key_failed(k: str, status_code: int, err_text: str = ""):
+    now = time.time()
+    low = err_text.lower()
+    with _key_lock:
+        st = _key_status.get(k, {"status": "ok", "until": 0.0, "fails": 0})
+        st["fails"] = st.get("fails", 0) + 1
+        short_k = f"..{k[-6:]}" if len(k) >= 8 else "key"
+        if status_code in (401, 403) or "api key not valid" in low or "unauthorized" in low:
+            # Expired / invalid key - cooldown for 24 hours
+            st.update(status="expired", until=now + 86400)
+            print(f"[AI Key Rotation] Key {short_k} EXPIRED or INVALID (HTTP {status_code}). Rotating to next key (24h cooldown).", flush=True)
+        elif status_code == 429 or "quota" in low or "rate limit" in low or "resource_exhausted" in low:
+            # Quota exhausted or rate limited - cooldown for 15 minutes
+            st.update(status="exhausted", until=now + 900)
+            print(f"[AI Key Rotation] Key {short_k} QUOTA EXCEEDED (HTTP 429). Rotating to next healthy key (15m cooldown).", flush=True)
+        else:
+            # Temporary error (500/503/timeout) - short 60s cooldown
+            st.update(status="temp_error", until=now + 60)
+            print(f"[AI Key Rotation] Key {short_k} temporary error (HTTP {status_code}). Rotating to next key.", flush=True)
+        _key_status[k] = st
+
+
+def get_ordered_keys() -> list:
+    """Returns all configured keys, prioritizing healthy keys that have not expired or exhausted quota."""
     kl = keys()
     if not kl:
         return []
+    now = time.time()
     with _key_lock:
-        idx = _key_idx % len(kl)
-        _key_idx += 1
-    return kl[idx:] + kl[:idx]
+        healthy = []
+        cooling = []
+        for k in kl:
+            st = _key_status.get(k)
+            if not st or now >= st.get("until", 0.0):
+                healthy.append(k)
+            else:
+                cooling.append((st.get("until", 0.0), k))
+        cooling.sort(key=lambda x: x[0])
+        return healthy + [k for _, k in cooling]
+
+
+def rotated_keys() -> list:
+    return get_ordered_keys()
 
 
 def label() -> str:
@@ -125,8 +166,10 @@ def public() -> dict:
     """What the settings page may see. The key itself never leaves the server: only whether there is one, and
     its last four characters so the owner can tell which key it is."""
     c = current()
+    kl = get_ordered_keys()
+    key_hint = (f"Active: ..{kl[0][-4:]} ({len(kl)} in pool)" if len(kl) > 1 else (kl[0][-4:] if kl and len(kl[0]) >= 12 else ""))
     return {"provider": c["provider"], "models": c["models"], "base_url": c["base_url"], "has_key": bool(c["key"]),
-            "key_hint": (f"{len(keys())} keys (..{keys()[0][-4:]})" if len(keys()) > 1 else (keys()[0][-4:] if keys() and len(keys()[0]) >= 12 else "")), "ready": ready(), "label": label(),
+            "key_hint": key_hint, "ready": ready(), "label": label(),
             "saved_here": bool(_from_dashboard().get("provider")),
             "providers": [{"id": k, "label": v[0], "address": v[1], "needs_key": k not in NO_KEY, "key_url": v[3], "example": v[4]}
                           for k, v in PROVIDERS.items()]}
@@ -151,7 +194,7 @@ def save(provider_id: str, model_ids, address: str = "", new_key=None) -> dict:
     if p == "custom" and not address:
         raise ValueError("A custom service needs its address, for example http://127.0.0.1:1234/v1")
     old = current()
-    k = old["key"] if new_key is None and old["provider"] == p else str(new_key or "").strip()[:400]
+    k = old["key"] if new_key is None and old["provider"] == p else str(new_key or "").strip()[:4000]
     if not k and p not in NO_KEY:
         raise ValueError("Paste the key for this service.")
     with _lock:
@@ -344,7 +387,7 @@ def call(model: str, prompt: str, schema: dict):
 def _gemini(model, prompt, schema):
     body = {"contents": [{"role": "user", "parts": [{"text": prompt}]}],
             "generationConfig": {"temperature": 0.4, "responseMimeType": "application/json", "responseSchema": schema}}
-    kl = rotated_keys()
+    kl = get_ordered_keys()
     if not kl:
         raise AIError("No API key configured.")
     last_err = None
@@ -352,20 +395,26 @@ def _gemini(model, prompt, schema):
         try:
             r = httpx.post(f"{base_url()}/{model}:generateContent", json=body, headers={"x-goog-api-key": k}, timeout=30)
             if r.status_code == 200:
+                mark_key_success(k)
                 data = r.json()
                 text = "".join(p.get("text", "") for p in data["candidates"][0]["content"]["parts"])
                 u = data.get("usageMetadata", {})
                 sent = int(u.get("promptTokenCount") or 0)
                 return json.loads(text), sent, max(0, int(u.get("totalTokenCount") or 0) - sent)
-            elif r.status_code in (429, 403, 500, 503):
+            elif r.status_code in (401, 403, 429, 500, 503):
+                mark_key_failed(k, r.status_code, r.text)
                 last_err = r
-                continue
+                continue  # Key expired or exhausted: immediately rotate to next healthy key!
             else:
+                mark_key_failed(k, r.status_code, r.text)
                 _fail(r, model)
         except (httpx.ConnectTimeout, httpx.ReadTimeout, httpx.ConnectError) as e:
-            last_err = None
-            raise AIError(f"Connection error reaching {model}: {e}")
+            mark_key_failed(k, 504, str(e))
+            last_err = AIError(f"Connection error reaching {model}: {e}")
+            continue
     if last_err is not None:
+        if isinstance(last_err, Exception):
+            raise last_err
         _fail(last_err, model)
 
 
