@@ -1,0 +1,35 @@
+{
+  "expo": {
+    "name": "PeakCut",
+    "slug": "peakcut",
+    "version": "1.0.0",
+    "scheme": "peakcut",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.peakcut.app"
+    },
+    "android": {
+      "package": "com.peakcut.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#1E1612",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      "expo-video",
+      "expo-sharing",
+      "expo-font"
+    ]
+  }
+}
