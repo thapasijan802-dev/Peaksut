@@ -233,8 +233,22 @@ def _read_google_client() -> tuple:
     return "", ""
 
 
-# ---------------------------------------------------------------- video
+# ---------------------------------------------------------------- video & retention
 MAX_SOURCE_HEIGHT = 1080
 OUT_W, OUT_H, OUT_FPS = 1080, 1920, 30
+RETENTION_HOURS = float(env("PEAKCUT_RETENTION_HOURS", "24"))
+
+# ---------------------------------------------------------------- crypto billing (NOWPayments)
+NOWPAYMENTS_API_KEY = env("NOWPAYMENTS_API_KEY", "").strip()
+NOWPAYMENTS_IPN_SECRET = env("NOWPAYMENTS_IPN_SECRET", "").strip()
+NOWPAYMENTS_SANDBOX = env("NOWPAYMENTS_SANDBOX", "0") == "1"
+
+# ---------------------------------------------------------------- Cloudflare Turnstile & email OTP
+TURNSTILE_SITE_KEY = env("TURNSTILE_SITE_KEY", "").strip()
+TURNSTILE_SECRET_KEY = env("TURNSTILE_SECRET_KEY", "").strip()
+SIGNUP_OTP = env("PEAKCUT_SIGNUP_OTP", "1") == "1"
+LOGIN_OTP = env("PEAKCUT_LOGIN_OTP", "0") == "1"
+RESEND_API_KEY = env("RESEND_API_KEY", "").strip()
 
 GROQ_KEY = env("PEAKCUT_GROQ_KEY", "").strip()
+APINEX_KEY = env("PEAKCUT_APINEX_KEY", "").strip()

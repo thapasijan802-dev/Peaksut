@@ -24,6 +24,7 @@ PROVIDERS = {
     "openai": ("OpenAI", "https://api.openai.com/v1", "openai", "https://platform.openai.com/api-keys", "gpt-4o-mini"),
     "xai": ("Grok", "https://api.x.ai/v1", "openai", "https://console.x.ai", "grok-4"),
     "groq": ("Groq", "https://api.groq.com/openai/v1", "openai", "https://console.groq.com/keys", "openai/gpt-oss-20b"),
+    "apinex": ("APInex", "https://api.apinex.bond/v1", "openai", "https://apinex.bond", "free/gemini-3.8-flash"),
     "openrouter": ("OpenRouter", "https://openrouter.ai/api/v1", "openai", "https://openrouter.ai/keys", "google/gemini-2.5-flash"),
     "anthropic": ("Claude", "https://api.anthropic.com/v1", "anthropic", "https://console.anthropic.com", ""),
     "ollama": ("Ollama (on this machine)", "http://127.0.0.1:11434/v1", "openai", "https://ollama.com", "llama3.1"),
@@ -79,6 +80,8 @@ def key() -> str:
     k = current()["key"]
     if not k and provider() == "groq":
         return getattr(config, "GROQ_KEY", "")
+    if not k and provider() == "apinex":
+        return getattr(config, "APINEX_KEY", "")
     return k
 
 
