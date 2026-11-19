@@ -12,6 +12,7 @@ import json
 import os
 import re
 import threading
+import time
 
 import httpx
 
@@ -19,10 +20,10 @@ from . import config
 
 # name -> (label shown on the pages, address, how it is spoken to, where to get a key, an example model id)
 PROVIDERS = {
-    "gemini": ("Gemini", "https://generativelanguage.googleapis.com/v1beta/models", "gemini", "https://aistudio.google.com/apikey", "gemini-2.5-flash"),
+    "gemini": ("Gemini", "https://generativelanguage.googleapis.com/v1beta/models", "gemini", "https://aistudio.google.com/apikey", "gemini-flash-lite-latest"),
     "openai": ("OpenAI", "https://api.openai.com/v1", "openai", "https://platform.openai.com/api-keys", "gpt-4o-mini"),
     "xai": ("Grok", "https://api.x.ai/v1", "openai", "https://console.x.ai", "grok-4"),
-    "groq": ("Groq", "https://api.groq.com/openai/v1", "openai", "https://console.groq.com/keys", "openai/gpt-oss-120b"),
+    "groq": ("Groq", "https://api.groq.com/openai/v1", "openai", "https://console.groq.com/keys", "openai/gpt-oss-20b"),
     "openrouter": ("OpenRouter", "https://openrouter.ai/api/v1", "openai", "https://openrouter.ai/keys", "google/gemini-2.5-flash"),
     "anthropic": ("Claude", "https://api.anthropic.com/v1", "anthropic", "https://console.anthropic.com", ""),
     "ollama": ("Ollama (on this machine)", "http://127.0.0.1:11434/v1", "openai", "https://ollama.com", "llama3.1"),
@@ -227,10 +228,20 @@ def note_problem(e):
     why = explain(e)
     if why:
         problem.update(text=why, at=time.time())
+        try:
+            from . import usage
+            usage.forget_all()
+        except Exception:
+            pass
 
 
 def clear_problem():
     problem.update(text="", at=0.0)
+    try:
+        from . import usage
+        usage.forget_all()
+    except Exception:
+        pass
 
 
 def _fail(r, model):
@@ -272,32 +283,58 @@ def _parse(text):
 
 
 # ---------------------------------------------------------------- one call
-def _groq_fallback(model: str, prompt: str, schema: dict):
+GROQ_MODELS = ["openai/gpt-oss-20b", "qwen/qwen3.8-27b", "openai/gpt-oss-120b"]
+_gemini_cooldown = 0.0
+
+
+def _groq_fallback(prompt: str, schema: dict):
     g_key = getattr(config, "GROQ_KEY", "")
     if not g_key:
         raise AIError("No Groq key configured.")
     headers = {"Authorization": f"Bearer {g_key}"}
-    body = {"model": model, "messages": [{"role": "user", "content": _wrapped(prompt, schema)}],
-            "response_format": {"type": "json_object"}, "temperature": 0.4}
-    r = httpx.post("https://api.groq.com/openai/v1/chat/completions", json=body, headers=headers, timeout=120)
-    if r.status_code != 200:
-        raise AIError(f"Groq HTTP {r.status_code}: {r.text[:200]}")
-    data = r.json()
-    u = data.get("usage") or {}
-    return _parse(data["choices"][0]["message"].get("content")), int(u.get("prompt_tokens") or 0), int(u.get("completion_tokens") or 0)
+    last_err = None
+    for model in GROQ_MODELS:
+        body = {"model": model, "messages": [{"role": "user", "content": _wrapped(prompt, schema)}],
+                "response_format": {"type": "json_object"}, "temperature": 0.4}
+        try:
+            r = httpx.post("https://api.groq.com/openai/v1/chat/completions", json=body, headers=headers, timeout=45)
+            if r.status_code == 200:
+                data = r.json()
+                u = data.get("usage") or {}
+                return _parse(data["choices"][0]["message"].get("content")), int(u.get("prompt_tokens") or 0), int(u.get("completion_tokens") or 0)
+            last_err = AIError(f"Groq {model} HTTP {r.status_code}: {r.text[:200]}")
+        except Exception as e:
+            last_err = e
+    if last_err is not None:
+        raise last_err
+    raise AIError("All Groq models failed.")
 
 
 def call(model: str, prompt: str, schema: dict):
     """Ask one model. Returns (the parsed JSON answer, tokens sent, tokens written back)."""
+    global _gemini_cooldown
     how = PROVIDERS[provider()][2]
+    now = time.time()
+
+    # If Gemini is in quota exhaustion cooldown, fall back to Groq directly
+    if provider() == "gemini" and now < _gemini_cooldown and getattr(config, "GROQ_KEY", ""):
+        try:
+            return _groq_fallback(prompt, schema)
+        except Exception:
+            pass
+
     try:
         return {"gemini": _gemini, "openai": _openai, "anthropic": _anthropic}[how](model, prompt, schema)
     except Exception as e:
-        if provider() == "gemini" and getattr(config, "GROQ_KEY", ""):
-            try:
-                return _groq_fallback("openai/gpt-oss-120b", prompt, schema)
-            except Exception:
-                pass
+        if provider() == "gemini":
+            err_str = str(e).lower()
+            if "429" in err_str or "quota" in err_str or "rate limit" in err_str or "exhausted" in err_str:
+                _gemini_cooldown = time.time() + 300  # 5 min cooldown for Gemini quota
+            if getattr(config, "GROQ_KEY", ""):
+                try:
+                    return _groq_fallback(prompt, schema)
+                except Exception:
+                    pass
         raise e
 
 
@@ -309,18 +346,22 @@ def _gemini(model, prompt, schema):
         raise AIError("No API key configured.")
     last_err = None
     for k in kl:
-        r = httpx.post(f"{base_url()}/{model}:generateContent", json=body, headers={"x-goog-api-key": k}, timeout=120)
-        if r.status_code == 200:
-            data = r.json()
-            text = "".join(p.get("text", "") for p in data["candidates"][0]["content"]["parts"])
-            u = data.get("usageMetadata", {})
-            sent = int(u.get("promptTokenCount") or 0)
-            return json.loads(text), sent, max(0, int(u.get("totalTokenCount") or 0) - sent)
-        elif r.status_code in (429, 403, 500, 503):
-            last_err = r
-            continue
-        else:
-            _fail(r, model)
+        try:
+            r = httpx.post(f"{base_url()}/{model}:generateContent", json=body, headers={"x-goog-api-key": k}, timeout=30)
+            if r.status_code == 200:
+                data = r.json()
+                text = "".join(p.get("text", "") for p in data["candidates"][0]["content"]["parts"])
+                u = data.get("usageMetadata", {})
+                sent = int(u.get("promptTokenCount") or 0)
+                return json.loads(text), sent, max(0, int(u.get("totalTokenCount") or 0) - sent)
+            elif r.status_code in (429, 403, 500, 503):
+                last_err = r
+                continue
+            else:
+                _fail(r, model)
+        except (httpx.ConnectTimeout, httpx.ReadTimeout, httpx.ConnectError) as e:
+            last_err = None
+            raise AIError(f"Connection error reaching {model}: {e}")
     if last_err is not None:
         _fail(last_err, model)
 
@@ -332,11 +373,30 @@ def _openai(model, prompt, schema):
     extras = [{"temperature": 0.4, "response_format": {"type": "json_object"}}, {"response_format": {"type": "json_object"}}, {}]
     r = None
     for extra in extras:
-        r = httpx.post(f"{base_url()}/chat/completions", json={**body, **extra}, headers=headers, timeout=180)
-        if r.status_code not in (400, 422):
-            break
-    if r.status_code != 200:
-        _fail(r, model)
+        try:
+            r = httpx.post(f"{base_url()}/chat/completions", json={**body, **extra}, headers=headers, timeout=60)
+            if r.status_code not in (400, 422):
+                break
+        except Exception:
+            continue
+    if r is None or r.status_code != 200:
+        if provider() == "groq":
+            for alt_m in GROQ_MODELS:
+                if alt_m == model:
+                    continue
+                try:
+                    alt_body = {"model": alt_m, "messages": [{"role": "user", "content": _wrapped(prompt, schema)}],
+                                "response_format": {"type": "json_object"}, "temperature": 0.4}
+                    r2 = httpx.post(f"{base_url()}/chat/completions", json=alt_body, headers=headers, timeout=45)
+                    if r2.status_code == 200:
+                        data = r2.json()
+                        u = data.get("usage") or {}
+                        return _parse(data["choices"][0]["message"].get("content")), int(u.get("prompt_tokens") or 0), int(u.get("completion_tokens") or 0)
+                except Exception:
+                    pass
+        if r is not None:
+            _fail(r, model)
+        raise AIError(f"Failed calling {model}")
     data = r.json()
     u = data.get("usage") or {}
     return _parse(data["choices"][0]["message"].get("content")), int(u.get("prompt_tokens") or 0), int(u.get("completion_tokens") or 0)
@@ -344,7 +404,7 @@ def _openai(model, prompt, schema):
 
 def _anthropic(model, prompt, schema):
     body = {"model": model, "max_tokens": 8192, "messages": [{"role": "user", "content": _wrapped(prompt, schema)}]}
-    r = httpx.post(f"{base_url()}/messages", json=body, timeout=180,
+    r = httpx.post(f"{base_url()}/messages", json=body, timeout=60,
                    headers={"x-api-key": key(), "anthropic-version": "2023-06-01"})
     if r.status_code != 200:
         _fail(r, model)
