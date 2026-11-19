@@ -28,12 +28,11 @@ function ClipCard({ clip, isActive, token }: ClipCardProps) {
   const [downloading, setDownloading] = useState(false);
   const [sharing, setSharing] = useState(false);
 
-  // Setup video source with session Cookie and Authorization headers
+  // Setup video source with standard Bearer Authorization headers
   const videoSource = token
     ? {
         uri: clip.video_url,
         headers: {
-          Cookie: `peakcut_session=${token}`,
           Authorization: `Bearer ${token}`,
           Origin: API_BASE,
         },
@@ -82,7 +81,6 @@ function ClipCard({ clip, isActive, token }: ClipCardProps) {
       const downloadRes = await FileSystem.downloadAsync(clip.video_url, tempUri, {
         headers: authToken
           ? {
-              Cookie: `peakcut_session=${authToken}`,
               Authorization: `Bearer ${authToken}`,
               Origin: API_BASE,
             }
@@ -131,7 +129,6 @@ function ClipCard({ clip, isActive, token }: ClipCardProps) {
         const downloadRes = await FileSystem.downloadAsync(clip.video_url, tempUri, {
           headers: authToken
             ? {
-                Cookie: `peakcut_session=${authToken}`,
                 Authorization: `Bearer ${authToken}`,
                 Origin: API_BASE,
               }

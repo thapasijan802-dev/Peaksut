@@ -1,6 +1,6 @@
 /**
  * PeakCut Mobile API Client
- * Hardened for FastAPI sessions, CSRF headers, and timeouts.
+ * Uses standard Bearer token authentication stored in `expo-secure-store`.
  */
 import * as SecureStore from "expo-secure-store";
 import { User, Creator, Job, Clip, UsageStats, ServerStatus } from "../types";
@@ -56,7 +56,6 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
   const headers: Record<string, string> = {
     Accept: "application/json",
-    // Ensure Origin matches server PUBLIC_URL so FastAPI's _from_here CSRF check always passes
     Origin: API_BASE,
     ...(options.headers as Record<string, string>),
   };
@@ -66,8 +65,6 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   }
 
   if (token) {
-    // FastAPI server Gate inspects req.cookies.get("peakcut_session")
-    headers["Cookie"] = `peakcut_session=${token}`;
     headers["Authorization"] = `Bearer ${token}`;
   }
 
@@ -81,15 +78,6 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
       headers,
       signal: controller.signal,
     });
-
-    // Check Set-Cookie header if available
-    const setCookie = res.headers.get("set-cookie");
-    if (setCookie) {
-      const match = setCookie.match(/peakcut_session=([^;]+)/);
-      if (match && match[1]) {
-        await setAuthToken(match[1]);
-      }
-    }
 
     if (res.status === 401) {
       await clearAuthToken();
@@ -144,16 +132,6 @@ export const api = {
           signal: controller.signal,
         });
 
-        const setCookie = res.headers.get("set-cookie");
-        let extractedToken = "";
-        if (setCookie) {
-          const match = setCookie.match(/peakcut_session=([^;]+)/);
-          if (match && match[1]) {
-            extractedToken = match[1];
-            await setAuthToken(extractedToken);
-          }
-        }
-
         if (!res.ok) {
           let msg = "Invalid email or password";
           try {
@@ -166,8 +144,7 @@ export const api = {
         }
 
         const data = await res.json();
-        // If server returns token in JSON body (e.g. from mobile-friendly patch) or set-cookie
-        const token = data.token || extractedToken;
+        const token = data.token;
         if (token) {
           await setAuthToken(token);
         }
@@ -198,16 +175,6 @@ export const api = {
           signal: controller.signal,
         });
 
-        const setCookie = res.headers.get("set-cookie");
-        let extractedToken = "";
-        if (setCookie) {
-          const match = setCookie.match(/peakcut_session=([^;]+)/);
-          if (match && match[1]) {
-            extractedToken = match[1];
-            await setAuthToken(extractedToken);
-          }
-        }
-
         if (!res.ok) {
           let msg = "Failed to sign up";
           try {
@@ -220,7 +187,7 @@ export const api = {
         }
 
         const data = await res.json();
-        const token = data.token || extractedToken;
+        const token = data.token;
         if (token) {
           await setAuthToken(token);
         }
