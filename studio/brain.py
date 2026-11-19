@@ -300,7 +300,9 @@ def find_clips(words, db, duration, title="", uploader="", max_clips=6, min_len=
     return clips, {"model": used_model, "tokens": tokens, "note": note}
 
 
-def find_live_clips(words, z, now, chat=None, title="", uploader="", min_len=15, max_len=60, existing=()):
+def find_live_clips(words, z, now, chat=None, title="", uploader="", min_len=20, max_len=60, existing=()):
+    min_len = max(20, int(min_len or 20))
+    max_len = max(min_len + 5, int(max_len or 60))
     """One live check over the recent transcript. Returns (clips, tokens_used)."""
     lines = make_lines(words, z, chat)
     if len(lines) < 3:
